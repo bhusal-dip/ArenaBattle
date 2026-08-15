@@ -1,10 +1,12 @@
 const socket = io();
 
+const selectScreen = document.getElementById('select-screen');
 const lobbyScreen = document.getElementById('lobby-screen');
 const countdownScreen = document.getElementById('countdown-screen');
 const gameScreen = document.getElementById('game-screen');
 const endScreen = document.getElementById('end-screen');
 
+const lobbyTitle = document.getElementById('lobby-title');
 const qrImg = document.getElementById('qr-img');
 const roomCodeText = document.getElementById('room-code-text');
 const joinUrlText = document.getElementById('join-url-text');
@@ -15,9 +17,21 @@ const countdownNumber = document.getElementById('countdown-number');
 const canvas = document.getElementById('game-canvas');
 const ctx = canvas.getContext('2d');
 const hpBarsEl = document.getElementById('hp-bars');
+const scoreHud = document.getElementById('score-hud');
+const scoreRedEl = document.getElementById('score-red');
+const scoreBlueEl = document.getElementById('score-blue');
+const matchClockEl = document.getElementById('match-clock');
 const winnerNameEl = document.getElementById('winner-name');
 const restartBtn = document.getElementById('restart-btn');
 const announcementsEl = document.getElementById('announcements');
+
+const GAME_LABELS = { arena: 'Arena Battle', hockey: 'Puck Rush' };
+let currentGameType = 'arena';
+
+function showScreen(el) {
+  [selectScreen, lobbyScreen, countdownScreen, gameScreen, endScreen].forEach((s) => s.classList.add('hidden'));
+  el.classList.remove('hidden');
+}
 
 // ---- Sound (synthesized, no audio files needed — works with zero internet on-site) ----
 let audioCtx = null;
@@ -42,11 +56,10 @@ function playTone({ freq, duration = 0.15, type = 'sine', gain = 0.2, delay = 0,
   osc.stop(t0 + duration + 0.05);
 }
 
-function playHitSound() {
-  playTone({ freq: 220, glideTo: 90, duration: 0.12, type: 'sawtooth', gain: 0.18 });
-}
-function playEliminationSound() {
-  playTone({ freq: 520, glideTo: 140, duration: 0.5, type: 'square', gain: 0.16 });
+function playHitSound() { playTone({ freq: 220, glideTo: 90, duration: 0.12, type: 'sawtooth', gain: 0.18 }); }
+function playEliminationSound() { playTone({ freq: 520, glideTo: 140, duration: 0.5, type: 'square', gain: 0.16 }); }
+function playGoalSound() {
+  [440, 660, 880].forEach((freq, i) => playTone({ freq, duration: 0.28, type: 'triangle', gain: 0.2, delay: i * 0.08 }));
 }
 function playWinSound() {
   [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) =>
@@ -69,19 +82,25 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-function showScreen(el) {
-  [lobbyScreen, countdownScreen, gameScreen, endScreen].forEach((s) => s.classList.add('hidden'));
-  el.classList.remove('hidden');
-}
-
-socket.on('connect', () => {
-  socket.emit('host:create');
+// ---- Game selection ----
+document.querySelectorAll('.game-card').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    unlockAudio(); // arm audio here too, in case Start is clicked quickly after
+    const gameType = btn.dataset.game;
+    currentGameType = gameType;
+    lobbyTitle.innerHTML = `${GAME_LABELS[gameType].toUpperCase()} <span>LOBBY</span>`;
+    scoreHud.classList.toggle('hidden', gameType !== 'hockey');
+    hpBarsEl.classList.toggle('hidden', gameType !== 'arena');
+    socket.emit('host:create', { gameType });
+  });
 });
 
-socket.on('host:created', ({ code, joinUrl, qrDataUrl }) => {
+socket.on('host:created', ({ code, joinUrl, qrDataUrl, gameType }) => {
+  currentGameType = gameType;
   roomCodeText.textContent = code;
   joinUrlText.textContent = joinUrl;
   if (qrDataUrl) qrImg.src = qrDataUrl;
+  showScreen(lobbyScreen);
 });
 
 socket.on('lobby:update', ({ players }) => {
@@ -89,7 +108,8 @@ socket.on('lobby:update', ({ players }) => {
   playerListEl.innerHTML = '';
   players.forEach((p) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${p.name}`;
+    const teamTag = p.team ? ` (${p.team})` : '';
+    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${p.name}${teamTag}`;
     if (!p.connected) li.style.opacity = '0.4';
     playerListEl.appendChild(li);
   });
@@ -102,7 +122,7 @@ startBtn.addEventListener('click', () => {
   socket.emit('host:start');
 });
 restartBtn.addEventListener('click', () => {
-  showScreen(lobbyScreen);
+  showScreen(selectScreen);
   socket.emit('host:restart');
 });
 
@@ -125,21 +145,44 @@ socket.on('game:countdown', ({ startsAt }) => {
 let latestState = null;
 socket.on('state:update', (state) => {
   latestState = state;
+  if (state.gameType === 'hockey') {
+    scoreRedEl.textContent = state.score.red;
+    scoreBlueEl.textContent = state.score.blue;
+    const secs = Math.ceil(state.timeRemaining / 1000);
+    matchClockEl.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  }
 });
 
-socket.on('fx:hit', () => {
-  playHitSound();
-});
+socket.on('fx:hit', () => playHitSound());
+socket.on('fx:steal', () => playHitSound());
 
 socket.on('player:eliminated', ({ name, color, placement }) => {
   playEliminationSound();
   showAnnouncement(`${name} eliminated — ${ordinal(placement)} place`, color);
 });
 
-socket.on('game:ended', ({ winner }) => {
+socket.on('goal:scored', ({ team }) => {
+  playGoalSound();
+  const color = team === 'red' ? '#e63946' : '#4cc9f0';
+  showAnnouncement(`GOAL! ${team.toUpperCase()} scores`, color);
+});
+
+socket.on('game:ended', (payload) => {
   playWinSound();
-  winnerNameEl.textContent = winner ? winner.name : 'No one (draw)';
-  winnerNameEl.style.color = winner ? winner.color : '#fff';
+  if (payload.mode === 'hockey') {
+    const { winnerTeam, score } = payload;
+    if (winnerTeam) {
+      winnerNameEl.textContent = `${winnerTeam.toUpperCase()} WINS ${score.red}–${score.blue}`;
+      winnerNameEl.style.color = winnerTeam === 'red' ? '#e63946' : '#4cc9f0';
+    } else {
+      winnerNameEl.textContent = `DRAW ${score.red}–${score.blue}`;
+      winnerNameEl.style.color = '#fff';
+    }
+  } else {
+    const { winner } = payload;
+    winnerNameEl.textContent = winner ? winner.name : 'No one (draw)';
+    winnerNameEl.style.color = winner ? winner.color : '#fff';
+  }
   showScreen(endScreen);
 });
 
@@ -153,14 +196,18 @@ resizeCanvas();
 function renderLoop() {
   requestAnimationFrame(renderLoop);
   if (!latestState || gameScreen.classList.contains('hidden')) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (latestState.gameType === 'hockey') renderHockey(latestState);
+  else renderArena(latestState);
+}
+requestAnimationFrame(renderLoop);
 
+function renderArena(state) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // arena boundary
   ctx.beginPath();
-  ctx.arc(cx, cy, latestState.arenaR, 0, Math.PI * 2);
+  ctx.arc(cx, cy, state.arenaR, 0, Math.PI * 2);
   ctx.strokeStyle = '#4cc9f0';
   ctx.lineWidth = 4;
   ctx.shadowColor = '#4cc9f0';
@@ -170,18 +217,14 @@ function renderLoop() {
   ctx.fillStyle = 'rgba(76,201,240,0.05)';
   ctx.fill();
 
-  // players
-  latestState.players.forEach((p) => {
+  state.players.forEach((p) => {
     if (!p.alive) return;
     const x = cx + p.x;
     const y = cy + p.y;
     ctx.beginPath();
     ctx.arc(x, y, 18, 0, Math.PI * 2);
     ctx.fillStyle = p.color;
-    if (p.dashing) {
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 25;
-    }
+    if (p.dashing) { ctx.shadowColor = p.color; ctx.shadowBlur = 25; }
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.strokeStyle = '#fff';
@@ -194,9 +237,8 @@ function renderLoop() {
     ctx.fillText(p.name, x, y - 26);
   });
 
-  renderHpBars(latestState.players);
+  renderHpBars(state.players);
 }
-requestAnimationFrame(renderLoop);
 
 function renderHpBars(players) {
   hpBarsEl.innerHTML = players
@@ -209,4 +251,81 @@ function renderHpBars(players) {
       </div>`
     )
     .join('');
+}
+
+function renderHockey(state) {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const RINK_HALF_W = 350;
+  const RINK_HALF_H = 190;
+  const GOAL_HALF_H = 60;
+
+  // rink
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(cx - RINK_HALF_W, cy - RINK_HALF_H, RINK_HALF_W * 2, RINK_HALF_H * 2);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - RINK_HALF_H);
+  ctx.lineTo(cx, cy + RINK_HALF_H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.stroke();
+
+  // goals (blue defends right, red defends left)
+  ctx.strokeStyle = '#4cc9f0';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(cx + RINK_HALF_W, cy - GOAL_HALF_H);
+  ctx.lineTo(cx + RINK_HALF_W, cy + GOAL_HALF_H);
+  ctx.stroke();
+  ctx.strokeStyle = '#e63946';
+  ctx.beginPath();
+  ctx.moveTo(cx - RINK_HALF_W, cy - GOAL_HALF_H);
+  ctx.lineTo(cx - RINK_HALF_W, cy + GOAL_HALF_H);
+  ctx.stroke();
+
+  // players
+  state.players.forEach((p) => {
+    const x = cx + p.x;
+    const y = cy + p.y;
+    ctx.beginPath();
+    ctx.arc(x, y, 16, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    if (p.dashing) { ctx.shadowColor = p.color; ctx.shadowBlur = 22; }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(p.name, x, y - 24);
+  });
+
+  // pass preview (faint dashed aim line)
+  if (state.passPreview) {
+    const from = { x: cx + state.passPreview.from.x, y: cy + state.passPreview.from.y };
+    const to = { x: cx + state.passPreview.to.x, y: cy + state.passPreview.to.y };
+    ctx.save();
+    ctx.setLineDash([8, 8]);
+    ctx.strokeStyle = state.passPreview.color;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ball
+  const bx = cx + state.ball.x;
+  const by = cy + state.ball.y;
+  ctx.beginPath();
+  ctx.arc(bx, by, 10, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = '#fff';
+  ctx.shadowBlur = state.ball.holderId ? 15 : 6;
+  ctx.fill();
+  ctx.shadowBlur = 0;
 }

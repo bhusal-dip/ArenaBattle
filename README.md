@@ -1,15 +1,27 @@
-# Arena Battle — Local Multiplayer Party Game
+# Party Games — Local Multiplayer
 
-A single-screen, local-WiFi multiplayer game. One computer runs the game and
-shows it on a TV/monitor; players join as controllers on their own phones by
-scanning a QR code — no app install needed.
+A single-screen, local-WiFi multiplayer party game platform. One computer runs
+the game and shows it on a TV/monitor; players join as controllers on their
+own phones by scanning a QR code — no app install needed.
 
-**Game: Bumper Blobs.** Steer your blob with a joystick, tap DASH to speed up
-and knock other players back (and damage them). Standing outside the shrinking
-arena drains your health. Last blob standing wins.
+Everything runs over your local WiFi — no internet connection is required
+once it's set up. Supports 2–10 players.
 
-Supports 2–10 players. Everything runs over your local WiFi — no internet
-connection is required once it's set up.
+## Games
+
+**Arena Battle.** Steer your blob with a joystick, tap DASH to speed up and
+knock other players back. Standing outside the shrinking arena drains your
+health. Last blob standing wins.
+
+**Puck Rush.** 2 teams, one puck, two goals. Move with the joystick — the
+same button doubles as **Shoot** (if you're holding the puck) or **Dash**
+(a body-check that knocks the puck loose from an opponent). A separate
+**Pass** button: hold it to aim (a faint line on the big screen shows where
+it'll go, updating live as you move the joystick), release to throw. First
+to 5 goals, or highest score when the clock runs out, wins.
+
+The host picks which game to launch from a game-select screen before the QR
+code is generated.
 
 ---
 
@@ -48,15 +60,19 @@ browser window/tab on the TV or monitor everyone will look at.
 
 ## 4. Play
 
-1. The host screen shows a QR code and a 4-letter room code.
+1. On the host screen, pick a game (Arena Battle or Puck Rush). This shows a
+   QR code and a 4-letter room code.
 2. Each player scans the QR code with their phone camera (or opens
    `http://<the-same-IP>:3000/controller.html` and types in the room code
-   manually), types their name, and taps **Join Game**.
+   manually), types their name, and taps **Join Game**. In Puck Rush,
+   players are auto-assigned to Red/Blue teams alternately as they join.
 3. Once at least 2 players have joined, the host clicks **Start Game**.
-4. After a 3-2-1 countdown, players use the on-screen joystick to move and
-   the DASH button to attack/boost. Last player standing wins.
-5. Host clicks **Play Again** to return everyone to the lobby for another
-   round.
+4. After a 3-2-1 countdown, players use the on-screen joystick to move.
+   - **Arena Battle:** tap DASH to speed up and knock others back.
+   - **Puck Rush:** tap SHOOT/DASH (shoots if you have the puck, otherwise
+     body-checks); hold PASS to aim, release to throw to a teammate.
+5. Host clicks **Play Again** to return to the game-select screen for
+   another round (same or different game).
 
 ## Deploying somewhere instead of running locally
 
@@ -106,24 +122,32 @@ best latency. Deploy it only if you specifically want remote players.
 ```
 arena-battle/
   server/
-    index.js       — Express + Socket.io server, room/session management
-    Room.js         — game rules: movement, dash, collisions, shrinking arena
+    index.js               — Express + Socket.io server, room/session management
+    roomFactory.js          — maps a gameType string to its Room class
+    games/
+      ArenaBattleRoom.js     — Arena Battle rules: movement, dash, shrinking arena
+      PuckRushRoom.js        — Puck Rush rules: teams, ball physics, shoot/pass/checking
   public/
-    host.html/css/js       — the big-screen display
-    controller.html/css/js — the phone controller (joystick + dash)
+    host.html/css/js         — the big-screen display (game-select + both renderers)
+    controller.html/css/js   — the phone controller (both control layouts)
+    joystick.js               — shared analog joystick component
   package.json
 ```
 
-## Adding more games later
+## Adding a third game
 
-The room/session/QR-join plumbing in `server/index.js` is written to be
-game-agnostic. To add a second game:
-
-1. Duplicate `Room.js`'s game-logic pieces (state, `tick()`, input handling)
-   into a new class, or add a `gameType` field and branch inside `Room`.
-2. Add a new `public/<game>.html/js` controller layout suited to that game's
-   inputs (buttons, swipe, tilt, etc.) and a matching host renderer.
-3. Let the host choose which game to launch before creating the room.
+1. Create `server/games/<YourGame>Room.js` implementing the same shape as
+   the existing rooms: `addPlayer`, `removePlayer`, `setInput`,
+   `broadcastLobby`, `startGame`, `resetToLobby`, `destroy`, plus `code`,
+   `state`, `players`, and `gameType` fields. Copy movement/dash constants
+   from `ArenaBattleRoom.js` or `PuckRushRoom.js` if you want the same feel.
+2. Register it in `server/roomFactory.js`'s `GAME_TYPES` map.
+3. Add a `.game-card` button on the host's select screen (`host.html`), and
+   a render function in `host.js` branched on `state.gameType`.
+4. Add a new hidden `#actions-<yourgame>` block in `controller.html` with
+   whatever buttons your game needs, and branch `controller.js` to show/wire
+   it up based on `gameType` from the join response. Reuse `joystick.js` for
+   movement — no need to rebuild it per game.
 
 The networking layer (Socket.io rooms, QR join, lobby flow) does not need to
 change between games.

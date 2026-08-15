@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Arena Battle — Controller</title>
+<title>Party Games — Controller</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <link rel="stylesheet" href="controller.css" />
 </head>
@@ -10,7 +10,7 @@
 
   <!-- JOIN SCREEN -->
   <section id="join-screen" class="screen">
-    <h1 class="title">ARENA <span>BATTLE</span></h1>
+    <h1 class="title">PARTY <span>GAMES</span></h1>
     <input id="room-input" class="text-input" placeholder="ROOM CODE" maxlength="4" autocapitalize="characters" />
     <input id="name-input" class="text-input" placeholder="Your name" maxlength="12" />
     <button id="join-btn" class="btn btn-primary">Join Game</button>
@@ -20,7 +20,7 @@
   <!-- WAITING SCREEN -->
   <section id="waiting-screen" class="screen hidden">
     <div id="my-swatch" class="swatch"></div>
-    <p class="hint">You're in! Waiting for host to start…</p>
+    <p id="waiting-hint" class="hint">You're in! Waiting for host to start…</p>
   </section>
 
   <!-- CONTROLLER SCREEN -->
@@ -30,8 +30,16 @@
         <div id="joystick-knob" class="joystick-knob"></div>
       </div>
     </div>
-    <div id="dash-zone" class="dash-zone">
+
+    <!-- Arena Battle controls -->
+    <div id="actions-arena" class="dash-zone hidden">
       <button id="dash-btn" class="dash-btn">DASH</button>
+    </div>
+
+    <!-- Puck Rush controls -->
+    <div id="actions-hockey" class="hockey-actions hidden">
+      <button id="pass-btn" class="pass-btn">PASS<br /><span>hold &amp; aim</span></button>
+      <button id="action-btn" class="dash-btn action-btn">SHOOT/<br />DASH</button>
     </div>
   </section>
 
@@ -41,6 +49,7 @@
   </section>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="joystick.js"></script>
   <script src="controller.js"></script>
 </body>
 </html>

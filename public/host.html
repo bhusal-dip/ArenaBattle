@@ -2,15 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Arena Battle — Host Screen</title>
+<title>Party Games — Host Screen</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="stylesheet" href="host.css" />
 </head>
 <body>
 
+  <!-- GAME SELECT SCREEN -->
+  <section id="select-screen" class="screen">
+    <h1 class="title">PARTY <span>GAMES</span></h1>
+    <div class="game-select-grid">
+      <button class="game-card" data-game="arena">
+        <span class="game-card-title">Arena Battle</span>
+        <span class="game-card-desc">Last blob standing in a shrinking arena. Joystick + Dash.</span>
+      </button>
+      <button class="game-card" data-game="hockey">
+        <span class="game-card-title">Puck Rush</span>
+        <span class="game-card-desc">2 teams, one puck, two goals. Joystick + Shoot/Dash + Pass.</span>
+      </button>
+    </div>
+  </section>
+
   <!-- LOBBY SCREEN -->
-  <section id="lobby-screen" class="screen">
-    <h1 class="title">ARENA <span>BATTLE</span></h1>
+  <section id="lobby-screen" class="screen hidden">
+    <h1 class="title" id="lobby-title">GAME <span>LOBBY</span></h1>
     <div class="lobby-grid">
       <div class="join-panel">
         <p class="hint">Scan to join on your phone</p>
@@ -35,6 +50,11 @@
   <section id="game-screen" class="screen hidden">
     <canvas id="game-canvas"></canvas>
     <div id="hp-bars" class="hp-bars"></div>
+    <div id="score-hud" class="score-hud hidden">
+      <span id="score-red" class="score-chip score-red">0</span>
+      <span id="match-clock" class="match-clock">2:30</span>
+      <span id="score-blue" class="score-chip score-blue">0</span>
+    </div>
     <div id="announcements" class="announcements"></div>
   </section>
 

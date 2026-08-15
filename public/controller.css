@@ -60,3 +60,16 @@ html, body {
 .dash-btn.on-cooldown { opacity: 0.35; box-shadow: none; }
 
 .status-text { font-size: 6vw; font-weight: 700; text-align: center; }
+
+.hockey-actions {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4vw; height: 100%;
+}
+.pass-btn {
+  width: 28vw; height: 28vw; max-width: 160px; max-height: 160px; border-radius: 50%;
+  background: linear-gradient(135deg, #52a675, #2f855a); color: #fff; font-weight: 900;
+  font-size: 4vw; border: none; box-shadow: 0 0 25px rgba(82,166,117,0.5); line-height: 1.2;
+}
+.pass-btn span { font-size: 0.55em; font-weight: 600; opacity: 0.85; }
+.pass-btn:active { transform: scale(0.92); background: linear-gradient(135deg, #6fc491, #3a9d6d); }
+.action-btn { font-size: 4.2vw; line-height: 1.15; }

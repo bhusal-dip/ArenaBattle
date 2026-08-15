@@ -10,11 +10,18 @@ const nameInput = document.getElementById('name-input');
 const joinBtn = document.getElementById('join-btn');
 const joinError = document.getElementById('join-error');
 const mySwatch = document.getElementById('my-swatch');
+const waitingHint = document.getElementById('waiting-hint');
 
 const joystickBase = document.getElementById('joystick-base');
 const joystickKnob = document.getElementById('joystick-knob');
+const actionsArena = document.getElementById('actions-arena');
+const actionsHockey = document.getElementById('actions-hockey');
 const dashBtn = document.getElementById('dash-btn');
+const passBtn = document.getElementById('pass-btn');
+const actionBtn = document.getElementById('action-btn');
 const statusText = document.getElementById('status-text');
+
+const joystick = createJoystick(joystickBase, joystickKnob);
 
 function showScreen(el) {
   [joinScreen, waitingScreen, controllerScreen, statusScreen].forEach((s) => s.classList.add('hidden'));
@@ -25,9 +32,10 @@ function showScreen(el) {
 const params = new URLSearchParams(window.location.search);
 if (params.get('room')) roomInput.value = params.get('room').toUpperCase();
 
-let myColor = '#4cc9f0';
 let myId = null;
+let myGameType = 'arena';
 let eliminatedThisRound = false;
+let passHeld = false;
 
 joinBtn.addEventListener('click', doJoin);
 function doJoin() {
@@ -46,10 +54,18 @@ function doJoin() {
     }
     joinError.textContent = '';
     myId = res.player.id;
-    myColor = res.player.color;
-    mySwatch.style.background = myColor;
-    mySwatch.style.color = myColor;
+    myGameType = res.gameType;
     eliminatedThisRound = false;
+
+    mySwatch.style.background = res.player.color;
+    mySwatch.style.color = res.player.color;
+    waitingHint.textContent = res.player.team
+      ? `You're in! Team ${res.player.team.toUpperCase()} — waiting for host to start…`
+      : "You're in! Waiting for host to start…";
+
+    actionsArena.classList.toggle('hidden', myGameType !== 'arena');
+    actionsHockey.classList.toggle('hidden', myGameType !== 'hockey');
+
     showScreen(waitingScreen);
   });
 }
@@ -67,6 +83,10 @@ socket.on('fx:hit', (hits) => {
   if (hits.some((h) => h.victimId === myId)) navigator.vibrate(60);
 });
 
+socket.on('fx:steal', ({ from }) => {
+  if (from === myId && navigator.vibrate) navigator.vibrate([40, 30, 40]);
+});
+
 socket.on('player:eliminated', ({ id, placement }) => {
   if (id !== myId) return;
   eliminatedThisRound = true;
@@ -75,9 +95,19 @@ socket.on('player:eliminated', ({ id, placement }) => {
   showScreen(statusScreen);
 });
 
-socket.on('game:ended', ({ winner }) => {
-  const iWon = winner && winner.id === myId;
-  statusText.textContent = iWon ? 'You WIN! 🏆' : winner ? `${winner.name} wins!` : 'Round over!';
+socket.on('goal:scored', ({ team }) => {
+  if (navigator.vibrate) navigator.vibrate(team ? 50 : 0);
+});
+
+socket.on('game:ended', (payload) => {
+  if (payload.mode === 'hockey') {
+    statusText.textContent = payload.winnerTeam
+      ? `${payload.winnerTeam.toUpperCase()} wins ${payload.score.red}–${payload.score.blue}!`
+      : `Draw ${payload.score.red}–${payload.score.blue}`;
+  } else {
+    const iWon = payload.winner && payload.winner.id === myId;
+    statusText.textContent = iWon ? 'You WIN! 🏆' : payload.winner ? `${payload.winner.name} wins!` : 'Round over!';
+  }
   showScreen(statusScreen);
 });
 
@@ -87,58 +117,7 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-// ---- Virtual joystick ----
-let joystickActive = false;
-let joystickPointerId = null;
-let currentDx = 0;
-let currentDy = 0;
-
-function getBaseGeometry() {
-  const rect = joystickBase.getBoundingClientRect();
-  return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2, r: rect.width / 2 };
-}
-
-function handleJoystickMove(clientX, clientY) {
-  const { cx, cy, r } = getBaseGeometry();
-  let dx = clientX - cx;
-  let dy = clientY - cy;
-  const dist = Math.hypot(dx, dy);
-  const maxDist = r * 0.9;
-  if (dist > maxDist) {
-    dx = (dx / dist) * maxDist;
-    dy = (dy / dist) * maxDist;
-  }
-  joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-  currentDx = dx / maxDist;
-  currentDy = dy / maxDist;
-}
-
-function resetJoystick() {
-  joystickKnob.style.transform = 'translate(-50%, -50%)';
-  currentDx = 0;
-  currentDy = 0;
-}
-
-joystickBase.addEventListener('pointerdown', (e) => {
-  joystickActive = true;
-  joystickPointerId = e.pointerId;
-  joystickBase.setPointerCapture(e.pointerId);
-  handleJoystickMove(e.clientX, e.clientY);
-});
-joystickBase.addEventListener('pointermove', (e) => {
-  if (!joystickActive || e.pointerId !== joystickPointerId) return;
-  handleJoystickMove(e.clientX, e.clientY);
-});
-function endJoystick(e) {
-  if (e.pointerId !== joystickPointerId) return;
-  joystickActive = false;
-  joystickPointerId = null;
-  resetJoystick();
-}
-joystickBase.addEventListener('pointerup', endJoystick);
-joystickBase.addEventListener('pointercancel', endJoystick);
-
-// ---- Dash button ----
+// ---- Arena Battle: Dash ----
 let dashCooldownUntil = 0;
 const DASH_COOLDOWN_MS = 1300; // mirrors server value, for UI feedback only
 
@@ -148,16 +127,37 @@ dashBtn.addEventListener('pointerdown', (e) => {
   const now = Date.now();
   if (now < dashCooldownUntil) return;
   dashCooldownUntil = now + DASH_COOLDOWN_MS;
-  socket.emit('player:input', { dx: currentDx, dy: currentDy, dash: true });
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, dash: true });
   if (navigator.vibrate) navigator.vibrate(40);
   dashBtn.classList.add('on-cooldown');
   setTimeout(() => dashBtn.classList.remove('on-cooldown'), DASH_COOLDOWN_MS);
 });
 
-// ---- Send movement at a steady low-latency rate ----
-// Sending on every pointermove plus a steady interval keeps motion responsive
-// without flooding the network; last value wins each tick.
+// ---- Puck Rush: Shoot/Dash (server decides which, based on possession) ----
+actionBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, action: true });
+  if (navigator.vibrate) navigator.vibrate(35);
+});
+
+// ---- Puck Rush: Pass — hold to aim (server streams back a live preview line
+// on the host screen), release to throw. Only does anything if you're holding the ball. ----
+passBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  passHeld = true;
+});
+function releasePass() {
+  if (!passHeld) return;
+  passHeld = false;
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, passHeld: false });
+}
+passBtn.addEventListener('pointerup', releasePass);
+passBtn.addEventListener('pointercancel', releasePass);
+
+// ---- Send movement (+ hockey pass-hold state) at a steady low-latency rate ----
 setInterval(() => {
   if (controllerScreen.classList.contains('hidden') || eliminatedThisRound) return;
-  socket.emit('player:input', { dx: currentDx, dy: currentDy });
+  const payload = { dx: joystick.dx, dy: joystick.dy };
+  if (myGameType === 'hockey') payload.passHeld = passHeld;
+  socket.emit('player:input', payload);
 }, 50); // 20 times/sec

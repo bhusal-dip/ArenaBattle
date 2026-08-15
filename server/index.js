@@ -4,7 +4,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const QRCode = require('qrcode');
-const { Room } = require('./Room');
+const { createRoom, GAME_TYPES } = require('./roomFactory');
 
 const app = express();
 const server = http.createServer(app);
@@ -42,9 +42,11 @@ const LOCAL_IP = getLocalIp();
 io.on('connection', (socket) => {
   socket.data.role = null;
 
-  socket.on('host:create', async () => {
-    const code = generateRoomCode();
-    const room = new Room(code, io);
+  socket.on('host:create', async (payload = {}) => {
+    const gameType = GAME_TYPES[payload.gameType] ? payload.gameType : 'arena';
+    // const code = generateRoomCode();
+    const code = "JLSV"; // Hardcoded room code for testing
+    const room = createRoom(gameType, code, io);
     room.hostSocketId = socket.id;
     rooms.set(code, room);
 
@@ -63,7 +65,7 @@ io.on('connection', (socket) => {
       console.error('QR generation failed', err);
     }
 
-    socket.emit('host:created', { code, joinUrl, qrDataUrl });
+    socket.emit('host:created', { code, joinUrl, qrDataUrl, gameType });
   });
 
   socket.on('player:join', ({ roomCode, name } = {}, ack) => {
@@ -79,7 +81,12 @@ io.on('connection', (socket) => {
     socket.data.roomCode = room.code;
     socket.data.playerId = player.id;
 
-    ack && ack({ ok: true, player: { id: player.id, name: player.name, color: player.color } });
+    ack &&
+      ack({
+        ok: true,
+        gameType: room.gameType,
+        player: { id: player.id, name: player.name, color: player.color, team: player.team },
+      });
     room.broadcastLobby();
   });
 

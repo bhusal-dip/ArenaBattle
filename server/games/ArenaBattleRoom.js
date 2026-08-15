@@ -29,10 +29,11 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-class Room {
+class ArenaBattleRoom {
   constructor(code, io) {
     this.code = code;
     this.io = io;
+    this.gameType = 'arena';
     this.state = 'lobby'; // lobby | countdown | playing | ended
     this.players = new Map(); // socketId -> player
     this.hostSocketId = null;
@@ -282,6 +283,7 @@ class Room {
     this.state = 'ended';
     clearInterval(this.loopHandle);
     this.io.to(this.code).emit('game:ended', {
+      mode: 'arena',
       winner: winner ? { id: winner.id, name: winner.name, color: winner.color } : null,
     });
   }
@@ -291,4 +293,4 @@ class Room {
   }
 }
 
-module.exports = { Room, MAX_PLAYERS };
+module.exports = { ArenaBattleRoom, MAX_PLAYERS };
