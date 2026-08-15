@@ -4,6 +4,7 @@ const joinScreen = document.getElementById('join-screen');
 const waitingScreen = document.getElementById('waiting-screen');
 const controllerScreen = document.getElementById('controller-screen');
 const statusScreen = document.getElementById('status-screen');
+const rotateHint = document.getElementById('rotate-hint');
 
 const roomInput = document.getElementById('room-input');
 const nameInput = document.getElementById('name-input');
@@ -11,6 +12,10 @@ const joinBtn = document.getElementById('join-btn');
 const joinError = document.getElementById('join-error');
 const mySwatch = document.getElementById('my-swatch');
 const waitingHint = document.getElementById('waiting-hint');
+const teamSelect = document.getElementById('team-select');
+const teamRedBtn = document.getElementById('team-red-btn');
+const teamBlueBtn = document.getElementById('team-blue-btn');
+const pingBadge = document.getElementById('ping-badge');
 
 const joystickBase = document.getElementById('joystick-base');
 const joystickKnob = document.getElementById('joystick-knob');
@@ -23,10 +28,36 @@ const statusText = document.getElementById('status-text');
 
 const joystick = createJoystick(joystickBase, joystickKnob);
 
+// Screens that need the phone in landscape to be usable.
+const LANDSCAPE_SCREENS = [waitingScreen, controllerScreen, statusScreen];
+
 function showScreen(el) {
   [joinScreen, waitingScreen, controllerScreen, statusScreen].forEach((s) => s.classList.add('hidden'));
   el.classList.remove('hidden');
+  updateRotateHint();
 }
+
+function updateRotateHint() {
+  const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+  const needsLandscape = LANDSCAPE_SCREENS.some((s) => !s.classList.contains('hidden'));
+  rotateHint.classList.toggle('hidden', !(isPortrait && needsLandscape));
+}
+window.addEventListener('resize', updateRotateHint);
+window.addEventListener('orientationchange', updateRotateHint);
+
+function tryLockLandscape() {
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock('landscape').catch(() => {
+      /* Not supported on this browser (common on iOS Safari) — the rotate
+         hint overlay covers this case instead. */
+    });
+  }
+}
+
+// ---- Remember the player's name on this phone ----
+const NAME_KEY = 'partyGamesPlayerName';
+const savedName = localStorage.getItem(NAME_KEY);
+if (savedName) nameInput.value = savedName;
 
 // Pre-fill room code from ?room=XXXX in the QR link
 const params = new URLSearchParams(window.location.search);
@@ -53,6 +84,9 @@ function doJoin() {
       return;
     }
     joinError.textContent = '';
+    localStorage.setItem(NAME_KEY, name);
+    tryLockLandscape();
+
     myId = res.player.id;
     myGameType = res.gameType;
     eliminatedThisRound = false;
@@ -65,10 +99,52 @@ function doJoin() {
 
     actionsArena.classList.toggle('hidden', myGameType !== 'arena');
     actionsHockey.classList.toggle('hidden', myGameType !== 'hockey');
+    teamSelect.classList.toggle('hidden', myGameType !== 'hockey');
 
-    showScreen(waitingScreen);
+    // Drop straight into a live game if we joined mid-round instead of
+    // making the player wait through a lobby screen that's already over.
+    if (res.phase === 'playing') {
+      showScreen(controllerScreen);
+    } else if (res.phase === 'countdown' && res.countdownStartsAt) {
+      showScreen(waitingScreen);
+      const delay = Math.max(0, res.countdownStartsAt - Date.now());
+      setTimeout(() => showScreen(controllerScreen), delay);
+    } else {
+      showScreen(waitingScreen);
+    }
   });
 }
+
+// ---- Team selection (Puck Rush only, lobby phase only) ----
+teamRedBtn.addEventListener('click', () => socket.emit('player:selectTeam', { team: 'red' }));
+teamBlueBtn.addEventListener('click', () => socket.emit('player:selectTeam', { team: 'blue' }));
+
+socket.on('lobby:update', ({ players }) => {
+  const me = players.find((p) => p.id === myId);
+  if (!me) return;
+  mySwatch.style.background = me.color;
+  mySwatch.style.color = me.color;
+  if (me.team) {
+    teamRedBtn.classList.toggle('active', me.team === 'red');
+    teamBlueBtn.classList.toggle('active', me.team === 'blue');
+  }
+});
+
+// Host switched games in-place — same room, new controls, no rejoin needed.
+socket.on('game:changed', ({ gameType }) => {
+  myGameType = gameType;
+  eliminatedThisRound = false;
+  actionsArena.classList.toggle('hidden', myGameType !== 'arena');
+  actionsHockey.classList.toggle('hidden', myGameType !== 'hockey');
+  teamSelect.classList.toggle('hidden', myGameType !== 'hockey');
+  showScreen(waitingScreen);
+});
+
+// Host restarted the same game — jump back to the waiting screen automatically.
+socket.on('game:reset', () => {
+  eliminatedThisRound = false;
+  showScreen(waitingScreen);
+});
 
 // The server flips state to 'playing' shortly after countdown starts.
 // We show controls as soon as countdown begins so players are ready to move at "GO".
@@ -161,3 +237,23 @@ setInterval(() => {
   if (myGameType === 'hockey') payload.passHeld = passHeld;
   socket.emit('player:input', payload);
 }, 50); // 20 times/sec
+
+// ---- Latency badge (visible at all times, updates every 2s) ----
+function updatePingBadge(ms) {
+  pingBadge.textContent = `${ms}ms`;
+  pingBadge.classList.toggle('ping-good', ms < 100);
+  pingBadge.classList.toggle('ping-ok', ms >= 100 && ms < 250);
+  pingBadge.classList.toggle('ping-bad', ms >= 250);
+}
+function checkPing() {
+  const start = Date.now();
+  socket.emit('ping:check', null, () => {
+    const rtt = Date.now() - start;
+    updatePingBadge(rtt);
+    socket.emit('player:pingReport', rtt);
+  });
+}
+setInterval(checkPing, 2000);
+checkPing();
+
+updateRotateHint();

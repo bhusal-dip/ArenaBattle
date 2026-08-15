@@ -39,6 +39,7 @@ class ArenaBattleRoom {
     this.hostSocketId = null;
     this.loopHandle = null;
     this.matchStart = 0;
+    this.countdownStartsAt = null;
     this.remainingCount = 0; // used to compute elimination placements
   }
 
@@ -46,12 +47,16 @@ class ArenaBattleRoom {
     if (this.players.size >= MAX_PLAYERS) return null;
     const color = COLORS[this.players.size % COLORS.length];
     const angle = Math.random() * Math.PI * 2;
+    // Late joiners (state === 'playing') spawn safely inside the current
+    // shrinking arena instead of at a fixed radius that might already be
+    // outside the zone.
+    const spawnR = this.state === 'playing' ? Math.min(100, this.currentArenaRadius() * 0.4) : 100;
     const player = {
       id: socketId,
       name: (name || 'Player').slice(0, 12),
       color,
-      x: Math.cos(angle) * 100,
-      y: Math.sin(angle) * 100,
+      x: Math.cos(angle) * spawnR,
+      y: Math.sin(angle) * spawnR,
       vx: 0,
       vy: 0,
       hp: HP_MAX,
@@ -60,9 +65,13 @@ class ArenaBattleRoom {
       lastDash: -99999,
       dashUntil: 0,
       stunUntil: 0,
+      pingMs: null,
       connected: true,
     };
     this.players.set(socketId, player);
+    // A player joining mid-round (or during the pre-round countdown) should
+    // still count toward the pool used to compute elimination placements.
+    if (this.state === 'countdown' || this.state === 'playing') this.remainingCount += 1;
     return player;
   }
 
@@ -90,6 +99,11 @@ class ArenaBattleRoom {
     }
   }
 
+  setPing(id, ms) {
+    const p = this.players.get(id);
+    if (p) p.pingMs = typeof ms === 'number' ? Math.round(ms) : null;
+  }
+
   broadcastLobby() {
     this.io.to(this.code).emit('lobby:update', {
       players: [...this.players.values()].map((p) => ({
@@ -97,6 +111,7 @@ class ArenaBattleRoom {
         name: p.name,
         color: p.color,
         connected: p.connected,
+        pingMs: p.pingMs,
       })),
     });
   }
@@ -106,10 +121,12 @@ class ArenaBattleRoom {
     this.state = 'countdown';
     this.remainingCount = this.players.size;
     const startsAt = Date.now() + 3000;
+    this.countdownStartsAt = startsAt;
     this.io.to(this.code).emit('game:countdown', { startsAt });
     setTimeout(() => {
       if (this.state !== 'countdown') return;
       this.state = 'playing';
+      this.countdownStartsAt = null;
       this.matchStart = Date.now();
       this.beginLoop();
     }, 3000);
@@ -117,6 +134,7 @@ class ArenaBattleRoom {
 
   resetToLobby() {
     this.state = 'lobby';
+    this.countdownStartsAt = null;
     clearInterval(this.loopHandle);
     for (const [id, p] of [...this.players.entries()]) {
       if (!p.connected) {
@@ -133,6 +151,7 @@ class ArenaBattleRoom {
       p.stunUntil = 0;
     }
     this.broadcastLobby();
+    this.io.to(this.code).emit('game:reset');
   }
 
   beginLoop() {
@@ -275,6 +294,7 @@ class ArenaBattleRoom {
         hp: p.hp,
         alive: p.alive,
         dashing: now < p.dashUntil,
+        pingMs: p.pingMs,
       })),
     });
   }

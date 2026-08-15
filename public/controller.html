@@ -8,6 +8,8 @@
 </head>
 <body>
 
+  <div id="ping-badge" class="ping-badge">--ms</div>
+
   <!-- JOIN SCREEN -->
   <section id="join-screen" class="screen">
     <h1 class="title">PARTY <span>GAMES</span></h1>
@@ -21,6 +23,10 @@
   <section id="waiting-screen" class="screen hidden">
     <div id="my-swatch" class="swatch"></div>
     <p id="waiting-hint" class="hint">You're in! Waiting for host to start…</p>
+    <div id="team-select" class="team-select hidden">
+      <button id="team-red-btn" class="team-btn team-btn-red">Join RED</button>
+      <button id="team-blue-btn" class="team-btn team-btn-blue">Join BLUE</button>
+    </div>
   </section>
 
   <!-- CONTROLLER SCREEN -->
@@ -47,6 +53,12 @@
   <section id="status-screen" class="screen hidden">
     <p id="status-text" class="status-text"></p>
   </section>
+
+  <!-- ROTATE HINT (shown over waiting/controller/status screens while in portrait) -->
+  <div id="rotate-hint" class="rotate-hint hidden">
+    <div class="rotate-icon">📱</div>
+    <p>Rotate your phone to landscape to play</p>
+  </div>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="joystick.js"></script>

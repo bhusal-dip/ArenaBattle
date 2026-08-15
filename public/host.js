@@ -23,14 +23,26 @@ const scoreBlueEl = document.getElementById('score-blue');
 const matchClockEl = document.getElementById('match-clock');
 const winnerNameEl = document.getElementById('winner-name');
 const restartBtn = document.getElementById('restart-btn');
+const changeGameBtn = document.getElementById('change-game-btn');
 const announcementsEl = document.getElementById('announcements');
 
 const GAME_LABELS = { arena: 'Arena Battle', hockey: 'Puck Rush' };
+const RENDER_SCALE = 1.35; // zoom factor for the shared display, purely visual
+const HIGH_PING_MS = 200; // above this, flag the player on-screen as having a connection issue
+
 let currentGameType = 'arena';
+let hasCreatedRoom = false; // true once a room exists; further game picks reuse the same room/code
 
 function showScreen(el) {
   [selectScreen, lobbyScreen, countdownScreen, gameScreen, endScreen].forEach((s) => s.classList.add('hidden'));
   el.classList.remove('hidden');
+}
+
+function applyGameTypeChrome(gameType) {
+  currentGameType = gameType;
+  lobbyTitle.innerHTML = `${GAME_LABELS[gameType].toUpperCase()} <span>LOBBY</span>`;
+  scoreHud.classList.toggle('hidden', gameType !== 'hockey');
+  hpBarsEl.classList.toggle('hidden', gameType !== 'arena');
 }
 
 // ---- Sound (synthesized, no audio files needed — works with zero internet on-site) ----
@@ -83,23 +95,34 @@ function ordinal(n) {
 }
 
 // ---- Game selection ----
+// The very first pick creates a fresh room (new code/QR). Every pick after
+// that reuses host:changeGame, which keeps the SAME room code so already-
+// connected players never have to rescan or rejoin.
 document.querySelectorAll('.game-card').forEach((btn) => {
   btn.addEventListener('click', () => {
     unlockAudio(); // arm audio here too, in case Start is clicked quickly after
     const gameType = btn.dataset.game;
-    currentGameType = gameType;
-    lobbyTitle.innerHTML = `${GAME_LABELS[gameType].toUpperCase()} <span>LOBBY</span>`;
-    scoreHud.classList.toggle('hidden', gameType !== 'hockey');
-    hpBarsEl.classList.toggle('hidden', gameType !== 'arena');
-    socket.emit('host:create', { gameType });
+    applyGameTypeChrome(gameType);
+    if (!hasCreatedRoom) {
+      socket.emit('host:create', { gameType });
+    } else {
+      socket.emit('host:changeGame', { gameType });
+    }
   });
 });
 
 socket.on('host:created', ({ code, joinUrl, qrDataUrl, gameType }) => {
-  currentGameType = gameType;
+  hasCreatedRoom = true;
+  applyGameTypeChrome(gameType);
   roomCodeText.textContent = code;
   joinUrlText.textContent = joinUrl;
   if (qrDataUrl) qrImg.src = qrDataUrl;
+  showScreen(lobbyScreen);
+});
+
+// Game type swapped in place — same code/QR, just refresh the lobby chrome.
+socket.on('game:changed', ({ gameType }) => {
+  applyGameTypeChrome(gameType);
   showScreen(lobbyScreen);
 });
 
@@ -109,21 +132,29 @@ socket.on('lobby:update', ({ players }) => {
   players.forEach((p) => {
     const li = document.createElement('li');
     const teamTag = p.team ? ` (${p.team})` : '';
-    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${p.name}${teamTag}`;
+    const pingTag = typeof p.pingMs === 'number' ? `<span class="ping-tag">${p.pingMs}ms</span>` : '';
+    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${p.name}${teamTag}${pingTag}`;
     if (!p.connected) li.style.opacity = '0.4';
     playerListEl.appendChild(li);
   });
-  startBtn.disabled = players.length < 2;
-  startBtn.textContent = players.length < 2 ? 'Need at least 2 players…' : `Start Game (${players.length} players)`;
+  startBtn.disabled = players.length < 1;
+  startBtn.textContent = players.length < 1 ? 'Need at least 2 players…' : `Start Game (${players.length} players)`;
 });
 
 startBtn.addEventListener('click', () => {
   unlockAudio(); // must happen on a user gesture for sound to be allowed
   socket.emit('host:start');
 });
+
+// Same room, same game, fresh round — players stay connected the whole time.
 restartBtn.addEventListener('click', () => {
-  showScreen(selectScreen);
+  showScreen(lobbyScreen);
   socket.emit('host:restart');
+});
+
+// Same room, different game — connected players get moved over automatically.
+changeGameBtn.addEventListener('click', () => {
+  showScreen(selectScreen);
 });
 
 socket.on('game:countdown', ({ startsAt }) => {
@@ -202,12 +233,23 @@ function renderLoop() {
 }
 requestAnimationFrame(renderLoop);
 
+// Draws a small "⚠ 240ms" tag under a player's name label, only when their
+// latency is high enough to actually be worth flagging as a possible issue.
+function drawPingWarning(x, y, pingMs) {
+  if (typeof pingMs !== 'number' || pingMs < HIGH_PING_MS) return;
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = '#ff595e';
+  ctx.textAlign = 'center';
+  ctx.fillText(`⚠ ${pingMs}ms`, x, y + 34);
+}
+
 function renderArena(state) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
+  const S = RENDER_SCALE;
 
   ctx.beginPath();
-  ctx.arc(cx, cy, state.arenaR, 0, Math.PI * 2);
+  ctx.arc(cx, cy, state.arenaR * S, 0, Math.PI * 2);
   ctx.strokeStyle = '#4cc9f0';
   ctx.lineWidth = 4;
   ctx.shadowColor = '#4cc9f0';
@@ -219,10 +261,10 @@ function renderArena(state) {
 
   state.players.forEach((p) => {
     if (!p.alive) return;
-    const x = cx + p.x;
-    const y = cy + p.y;
+    const x = cx + p.x * S;
+    const y = cy + p.y * S;
     ctx.beginPath();
-    ctx.arc(x, y, 18, 0, Math.PI * 2);
+    ctx.arc(x, y, 18 * S, 0, Math.PI * 2);
     ctx.fillStyle = p.color;
     if (p.dashing) { ctx.shadowColor = p.color; ctx.shadowBlur = 25; }
     ctx.fill();
@@ -234,7 +276,8 @@ function renderArena(state) {
     ctx.font = 'bold 14px sans-serif';
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
-    ctx.fillText(p.name, x, y - 26);
+    ctx.fillText(p.name, x, y - 26 * S);
+    drawPingWarning(x, y, p.pingMs);
   });
 
   renderHpBars(state.players);
@@ -256,9 +299,10 @@ function renderHpBars(players) {
 function renderHockey(state) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
-  const RINK_HALF_W = 350;
-  const RINK_HALF_H = 190;
-  const GOAL_HALF_H = 60;
+  const S = RENDER_SCALE;
+  const RINK_HALF_W = 350 * S;
+  const RINK_HALF_H = 190 * S;
+  const GOAL_HALF_H = 60 * S;
 
   // rink
   ctx.strokeStyle = 'rgba(255,255,255,0.5)';
@@ -285,10 +329,10 @@ function renderHockey(state) {
 
   // players
   state.players.forEach((p) => {
-    const x = cx + p.x;
-    const y = cy + p.y;
+    const x = cx + p.x * S;
+    const y = cy + p.y * S;
     ctx.beginPath();
-    ctx.arc(x, y, 16, 0, Math.PI * 2);
+    ctx.arc(x, y, 16 * S, 0, Math.PI * 2);
     ctx.fillStyle = p.color;
     if (p.dashing) { ctx.shadowColor = p.color; ctx.shadowBlur = 22; }
     ctx.fill();
@@ -299,13 +343,14 @@ function renderHockey(state) {
     ctx.font = 'bold 13px sans-serif';
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
-    ctx.fillText(p.name, x, y - 24);
+    ctx.fillText(p.name, x, y - 24 * S);
+    drawPingWarning(x, y, p.pingMs);
   });
 
   // pass preview (faint dashed aim line)
   if (state.passPreview) {
-    const from = { x: cx + state.passPreview.from.x, y: cy + state.passPreview.from.y };
-    const to = { x: cx + state.passPreview.to.x, y: cy + state.passPreview.to.y };
+    const from = { x: cx + state.passPreview.from.x * S, y: cy + state.passPreview.from.y * S };
+    const to = { x: cx + state.passPreview.to.x * S, y: cy + state.passPreview.to.y * S };
     ctx.save();
     ctx.setLineDash([8, 8]);
     ctx.strokeStyle = state.passPreview.color;
@@ -319,10 +364,10 @@ function renderHockey(state) {
   }
 
   // ball
-  const bx = cx + state.ball.x;
-  const by = cy + state.ball.y;
+  const bx = cx + state.ball.x * S;
+  const by = cy + state.ball.y * S;
   ctx.beginPath();
-  ctx.arc(bx, by, 10, 0, Math.PI * 2);
+  ctx.arc(bx, by, 10 * S, 0, Math.PI * 2);
   ctx.fillStyle = '#ffffff';
   ctx.shadowColor = '#fff';
   ctx.shadowBlur = state.ball.holderId ? 15 : 6;

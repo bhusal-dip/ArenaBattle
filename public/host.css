@@ -55,6 +55,14 @@ html, body {
 }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 
+.btn-secondary {
+  background: rgba(255,255,255,0.08); color: #f4f4f8; border: 2px solid rgba(255,255,255,0.2);
+}
+
+.end-actions { display: flex; gap: 16px; }
+
+.ping-tag { font-size: 0.7em; opacity: 0.55; margin-left: 6px; font-weight: 600; }
+
 .countdown-number {
   font-size: 20vw; font-weight: 900; color: #ffca3a;
   text-shadow: 0 0 60px rgba(255,202,58,0.6);

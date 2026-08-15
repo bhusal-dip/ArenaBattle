@@ -104,6 +104,32 @@ because of latency and one infra difference.
 For a local party, keep running it locally — it's simpler and gives you the
 best latency. Deploy it only if you specifically want remote players.
 
+## Session behavior
+
+- **Restarting keeps everyone connected.** "Play Again" reuses the same room
+  code — nobody needs to rescan the QR or rejoin.
+- **Switching games also keeps the same room code.** "Change Game" on the end
+  screen lets the host pick a different game without breaking the session;
+  connected players' phones update their controls automatically.
+- **Players can join mid-game.** New players who scan the QR while a round is
+  already running drop straight into the live game (spawned safely in Arena
+  Battle, auto-balanced onto a team in Puck Rush) instead of waiting in a
+  lobby. Note: team choice is only available before a Puck Rush match starts
+  — a mid-match joiner gets auto-assigned to whichever team is short a player.
+- **Names are remembered per phone** (via browser local storage), so
+  returning players don't have to retype their name each session.
+- **Side/team choice (Puck Rush).** After joining, players see Red/Blue
+  buttons on their waiting screen and can pick or switch sides any time the
+  room is between rounds.
+- **Latency display.** Each phone shows its own ping in the corner at all
+  times. The host's lobby list also shows each player's ping, and during
+  play, a player's name gets a small "⚠ Xms" flag on the big screen if their
+  connection is running slow enough to actually be worth noticing.
+- **Controller is landscape-only** for actual gameplay (joystick + buttons)
+  — if the phone is in portrait during the waiting/playing/results screens,
+  a "rotate your phone" prompt covers the screen until it's rotated. The
+  join screen (typing name/room code) stays usable in portrait.
+
 ## Troubleshooting
 
 - **Phone can't reach the join page / QR doesn't work:** almost always a WiFi

@@ -1,4 +1,5 @@
 const TICK_MS = 1000 / 45;
+const MAX_PLAYERS = 10;
 
 // --- rink layout (world units, centered at 0,0 — same scale as Arena Battle) ---
 const RINK_HALF_W = 350;
@@ -47,18 +48,22 @@ class PuckRushRoom {
     this.hostSocketId = null;
     this.loopHandle = null;
     this.matchStart = 0;
+    this.countdownStartsAt = null;
     this.score = { red: 0, blue: 0 };
     this.ball = { x: 0, y: 0, vx: 0, vy: 0, holderId: null };
   }
 
   addPlayer(socketId, name) {
-    const team = this.players.size % 2 === 0 ? 'red' : 'blue';
+    if (this.players.size >= MAX_PLAYERS) return null;
+    const redCount = [...this.players.values()].filter((p) => p.team === 'red').length;
+    const blueCount = this.players.size - redCount;
+    const team = redCount <= blueCount ? 'red' : 'blue';
     const player = {
       id: socketId,
       name: (name || 'Player').slice(0, 12),
       color: TEAM_COLOR[team],
       team,
-      x: 0,
+      x: team === 'red' ? -150 : 150,
       y: 0,
       vx: 0,
       vy: 0,
@@ -69,11 +74,29 @@ class PuckRushRoom {
       lastDash: -99999,
       dashUntil: 0,
       pickupBlockedUntil: 0,
+      pingMs: null,
       connected: true,
     };
     this.players.set(socketId, player);
-    this.layoutKickoff();
+    // Only reflow everyone into a neat kickoff formation before a game has
+    // started — repositioning active players mid-match would teleport them.
+    if (this.state === 'lobby') this.layoutKickoff();
     return player;
+  }
+
+  setTeam(id, team) {
+    if (this.state !== 'lobby') return; // only choosable pre-match
+    const p = this.players.get(id);
+    if (!p || (team !== 'red' && team !== 'blue')) return;
+    p.team = team;
+    p.color = TEAM_COLOR[team];
+    p.facingX = team === 'red' ? 1 : -1;
+    this.layoutKickoff();
+  }
+
+  setPing(id, ms) {
+    const p = this.players.get(id);
+    if (p) p.pingMs = typeof ms === 'number' ? Math.round(ms) : null;
   }
 
   removePlayer(id) {
@@ -127,6 +150,7 @@ class PuckRushRoom {
         color: p.color,
         team: p.team,
         connected: p.connected,
+        pingMs: p.pingMs,
       })),
     });
   }
@@ -159,10 +183,12 @@ class PuckRushRoom {
     this.score = { red: 0, blue: 0 };
     this.layoutKickoff();
     const startsAt = Date.now() + 3000;
+    this.countdownStartsAt = startsAt;
     this.io.to(this.code).emit('game:countdown', { startsAt });
     setTimeout(() => {
       if (this.state !== 'countdown') return;
       this.state = 'playing';
+      this.countdownStartsAt = null;
       this.matchStart = Date.now();
       this.beginLoop();
     }, 3000);
@@ -170,12 +196,14 @@ class PuckRushRoom {
 
   resetToLobby() {
     this.state = 'lobby';
+    this.countdownStartsAt = null;
     clearInterval(this.loopHandle);
     for (const [id, p] of [...this.players.entries()]) {
       if (!p.connected) this.players.delete(id);
     }
     this.layoutKickoff();
     this.broadcastLobby();
+    this.io.to(this.code).emit('game:reset');
   }
 
   beginLoop() {
@@ -361,6 +389,7 @@ class PuckRushRoom {
         y: p.y,
         dashing: now < p.dashUntil,
         connected: p.connected,
+        pingMs: p.pingMs,
       })),
     });
   }
