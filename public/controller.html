@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Arena Battle — Controller</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<link rel="stylesheet" href="controller.css" />
+</head>
+<body>
+
+  <!-- JOIN SCREEN -->
+  <section id="join-screen" class="screen">
+    <h1 class="title">ARENA <span>BATTLE</span></h1>
+    <input id="room-input" class="text-input" placeholder="ROOM CODE" maxlength="4" autocapitalize="characters" />
+    <input id="name-input" class="text-input" placeholder="Your name" maxlength="12" />
+    <button id="join-btn" class="btn btn-primary">Join Game</button>
+    <p id="join-error" class="error-text"></p>
+  </section>
+
+  <!-- WAITING SCREEN -->
+  <section id="waiting-screen" class="screen hidden">
+    <div id="my-swatch" class="swatch"></div>
+    <p class="hint">You're in! Waiting for host to start…</p>
+  </section>
+
+  <!-- CONTROLLER SCREEN -->
+  <section id="controller-screen" class="screen controller-layout hidden">
+    <div id="joystick-zone" class="joystick-zone">
+      <div id="joystick-base" class="joystick-base">
+        <div id="joystick-knob" class="joystick-knob"></div>
+      </div>
+    </div>
+    <div id="dash-zone" class="dash-zone">
+      <button id="dash-btn" class="dash-btn">DASH</button>
+    </div>
+  </section>
+
+  <!-- ELIMINATED / END SCREEN -->
+  <section id="status-screen" class="screen hidden">
+    <p id="status-text" class="status-text"></p>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="controller.js"></script>
+</body>
+</html>

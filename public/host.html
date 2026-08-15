@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Arena Battle — Host Screen</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="host.css" />
+</head>
+<body>
+
+  <!-- LOBBY SCREEN -->
+  <section id="lobby-screen" class="screen">
+    <h1 class="title">ARENA <span>BATTLE</span></h1>
+    <div class="lobby-grid">
+      <div class="join-panel">
+        <p class="hint">Scan to join on your phone</p>
+        <img id="qr-img" alt="QR code to join" />
+        <p class="room-code">Room code: <span id="room-code-text">----</span></p>
+        <p class="join-url" id="join-url-text"></p>
+      </div>
+      <div class="players-panel">
+        <p class="hint"><span id="player-count">0</span> / 10 players joined</p>
+        <ul id="player-list" class="player-list"></ul>
+        <button id="start-btn" class="btn btn-primary" disabled>Waiting for players…</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- COUNTDOWN SCREEN -->
+  <section id="countdown-screen" class="screen hidden">
+    <div id="countdown-number" class="countdown-number">3</div>
+  </section>
+
+  <!-- GAME SCREEN -->
+  <section id="game-screen" class="screen hidden">
+    <canvas id="game-canvas"></canvas>
+    <div id="hp-bars" class="hp-bars"></div>
+    <div id="announcements" class="announcements"></div>
+  </section>
+
+  <!-- END SCREEN -->
+  <section id="end-screen" class="screen hidden">
+    <h2 class="title">WINNER</h2>
+    <div id="winner-name" class="winner-name">—</div>
+    <button id="restart-btn" class="btn btn-primary">Play Again</button>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="host.js"></script>
+</body>
+</html>

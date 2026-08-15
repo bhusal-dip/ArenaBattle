@@ -1,0 +1,18 @@
+{
+  "name": "arena-battle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local WiFi single-screen multiplayer party game. Phones are controllers via QR join.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "qrcode": "^1.5.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
