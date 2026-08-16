@@ -8,6 +8,12 @@ primary_region = 'sin'
 
 [build]
 
+# This is the actual fix for the wrong join-link problem: it forces the QR
+# code / join URL to always use your real public Fly.io URL instead of
+# guessing from the incoming request, which isn't reliable behind Fly's proxy.
+[env]
+  PUBLIC_BASE_URL = "https://console-cloud.fly.dev"
+
 [http_service]
   internal_port = 3000
   force_https = true

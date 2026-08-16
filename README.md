@@ -179,6 +179,65 @@ safely can without ever overflowing it, on any display.
   a "rotate your phone" prompt covers the screen until it's rotated. The
   join screen (typing name/room code) stays usable in portrait.
 
+## Deploying online (Fly.io, Render, Railway, etc.)
+
+This app needs a host that runs a **persistent Node process** — it keeps a
+live game loop and in-memory room state between requests, and holds
+WebSocket connections open. That rules out pure serverless platforms like
+Vercel's default deployment model, but works great on Fly.io, Render,
+Railway, or a plain VPS.
+
+### Environment variables
+
+Copy `.env.example` to `.env` for local development (optional — every value
+has a working default locally). On a cloud host, set these as real platform
+environment variables instead (see Fly.io section below) — never commit a
+real `.env` file.
+
+The one that matters most in production is **`PUBLIC_BASE_URL`**: it's used
+to build the QR code / join link shown on the host screen. Locally, the
+server can reliably guess this from your LAN IP and the browser's request.
+In the cloud, behind a platform's reverse proxy, that guess is not reliable
+— it can silently fall back to an internal container IP that phones can't
+reach, producing a QR code / join link that looks fine but doesn't work.
+Setting `PUBLIC_BASE_URL` explicitly avoids that entirely.
+
+### Fly.io specifics
+
+This repo includes the `Dockerfile` and `fly.toml` from `fly launch` (already
+matched to this app's structure — no changes needed there). Two things to
+set for a working deploy:
+
+1. **`PUBLIC_BASE_URL`** — add it to the `[env]` block in `fly.toml` (already
+   included in this repo, pointed at `https://console-cloud.fly.dev` — change
+   the hostname if yours differs), or set it with
+   `fly secrets set PUBLIC_BASE_URL=https://your-app.fly.dev`. This fixes a
+   wrong/unreachable join link.
+2. **Root path redirect** — `server/index.js` now redirects `/` to
+   `/host.html`, so the bare Fly.io URL opens the host screen directly
+   instead of 404ing and needing `/host.html` typed manually.
+
+After changing `fly.toml`, redeploy with `fly deploy`.
+
+One more thing worth knowing: this fly.toml has `auto_stop_machines = 'stop'`
+and `min_machines_running = 0`, meaning Fly can spin the machine down to zero
+when idle. Fly's proxy generally treats open WebSocket connections as active
+traffic (so it won't stop mid-game), but if the app sits with zero
+connections for a while it will stop and cold-start on the next request —
+fine for a casual/free-tier setup, just don't be surprised by a few seconds
+of delay opening the host screen after a period of no use.
+
+### If you specifically want Vercel involved
+
+Vercel can still host the **static frontend** (the `public/` files) if you
+want, but the Socket.io backend still needs to run somewhere like Fly.io,
+Render, or Railway — Vercel can't run the persistent game server itself.
+That's a frontend/backend split setup (different domains for the page vs.
+the game server, with CORS configured via `CORS_ORIGIN`) — happy to build
+that out if you actually want it, but for a normal single deployment,
+Fly.io/Render/Railway hosting the whole app (as you're already doing) is
+simpler and is what this project is set up for by default.
+
 ## Troubleshooting
 
 - **Phone can't reach the join page / QR doesn't work:** almost always a WiFi

@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const path = require('path');
 const os = require('os');
 const express = require('express');
@@ -8,12 +10,25 @@ const { createRoom, GAME_TYPES } = require('./roomFactory');
 
 const app = express();
 const server = http.createServer(app);
+
+// Only needed if the frontend is ever hosted on a different origin than this
+// server (an advanced/rare setup) — leave CORS_ORIGIN unset for the normal
+// setup where this same server also serves the static files.
+const CORS_ORIGIN = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+  : undefined;
+
 const io = new Server(server, {
   pingInterval: 2000,
   pingTimeout: 5000,
+  cors: CORS_ORIGIN ? { origin: CORS_ORIGIN, methods: ['GET', 'POST'] } : undefined,
 });
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// There's no public/index.html, so visiting the bare domain 404s unless we
+// redirect it somewhere useful.
+app.get('/', (req, res) => res.redirect('/host.html'));
 
 const rooms = new Map(); // code -> Room
 const PORT = process.env.PORT || 3000;
@@ -40,7 +55,11 @@ function getLocalIp() {
 const LOCAL_IP = getLocalIp();
 
 async function buildQr(socket, code) {
-  const origin = socket.handshake.headers.origin || `http://${LOCAL_IP}:${PORT}`;
+  // Priority: explicit env override (needed on most cloud hosts, since a
+  // platform's reverse proxy doesn't always forward a reliable Origin header)
+  // -> the browser's own request origin (works great for local LAN use)
+  // -> last-resort LAN IP guess.
+  const origin = process.env.PUBLIC_BASE_URL || socket.handshake.headers.origin || `http://${LOCAL_IP}:${PORT}`;
   const joinUrl = `${origin}/controller.html?room=${code}`;
   let qrDataUrl = null;
   try {
@@ -181,9 +200,12 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
+  const publicUrl = process.env.PUBLIC_BASE_URL || `http://${LOCAL_IP}:${PORT}`;
   console.log('');
   console.log('  Party Games is running!');
-  console.log(`  Host screen (open on the TV/laptop): http://${LOCAL_IP}:${PORT}/host.html`);
-  console.log(`  (Make sure phones join the SAME WiFi network as this computer)`);
+  console.log(`  Host screen: ${publicUrl}/  (redirects to /host.html)`);
+  if (!process.env.PUBLIC_BASE_URL) {
+    console.log('  (Make sure phones join the SAME WiFi network as this computer)');
+  }
   console.log('');
 });
