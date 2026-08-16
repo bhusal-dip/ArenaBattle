@@ -104,6 +104,34 @@ because of latency and one infra difference.
 For a local party, keep running it locally — it's simpler and gives you the
 best latency. Deploy it only if you specifically want remote players.
 
+## Puck Rush refinements
+
+- **Pass is now a single tap** (not hold-to-aim), same as Shoot/Dash — tap it
+  while holding the ball to release it toward your current aim direction. A
+  brief fading trail shows the line it just traveled along.
+- **Own goals count.** If the ball (carried or shot) crosses into your own
+  goal, the opposing team scores and it's logged as an own goal against you.
+- **Per-player goal tracking.** Goals (and own goals) are tallied per player
+  and shown in a small pill list under the score/clock on the host screen.
+- **Goal toasts** name the scorer and clearly flag own goals separately from
+  regular goals.
+- **Team choice is visible as it happens** — the host's lobby list shows a
+  small R/B badge next to each player's name the moment they pick a side.
+
+## Visual/identity
+
+- **Each player gets a random individual color** ("identity color"), used as
+  their controller's background theme and as their avatar's border ring on
+  the host screen (previously a plain white ring). In Puck Rush, the avatar
+  *fill* still uses the team color so sides stay easy to tell apart at a
+  glance — the border is what shows individual identity.
+- **Room code stays visible** in a small badge in the top-right corner of
+  the host screen at all times once a room exists (lobby, countdown, live
+  play, results) — handy for telling a latecomer the code without switching
+  screens.
+- **Winner celebration**: a confetti burst plays on the results screen,
+  colored to the winning team (Puck Rush) or winning player (Arena Battle).
+
 ## Session behavior
 
 - **Restarting keeps everyone connected.** "Play Again" reuses the same room

@@ -7,9 +7,10 @@ html, body {
 }
 
 .screen {
-  height: 100vh; width: 100vw;
+  height: 100vh; height: 100dvh; width: 100vw;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 24px; gap: 16px;
+  padding: 20px; gap: 14px;
+  overflow: hidden;
 }
 .hidden { display: none !important; }
 
@@ -48,15 +49,18 @@ html, body {
 
 /* Controller screen is designed landscape-first: joystick + action buttons
    side by side, sized with min(vw, vh) so it fits comfortably regardless of
-   exact phone dimensions once rotated. */
+   exact phone dimensions once rotated. Kept deliberately compact — mobile
+   browser toolbars eat into the visible height, so oversized controls here
+   were clipping/overflowing on shorter landscape screens. */
 .controller-layout {
+  height: 100vh; height: 100dvh;
   flex-direction: row; justify-content: space-between; align-items: center;
-  padding: 4vh 5vw;
+  padding: 1.5vh 3vw;
 }
 
 .joystick-zone { flex: 1; display: flex; align-items: center; justify-content: flex-start; height: 100%; }
 .joystick-base {
-  position: relative; width: min(42vw, 65vh); height: min(42vw, 65vh); max-width: 260px; max-height: 260px;
+  position: relative; width: min(32vw, 40vh); height: min(32vw, 40vh); max-width: 190px; max-height: 190px;
   border-radius: 50%; background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.15);
 }
 .joystick-knob {
@@ -67,9 +71,9 @@ html, body {
 
 .dash-zone { flex: 1; display: flex; align-items: center; justify-content: flex-end; height: 100%; }
 .dash-btn {
-  width: min(34vw, 55vh); height: min(34vw, 55vh); max-width: 200px; max-height: 200px; border-radius: 50%;
+  width: min(24vw, 36vh); height: min(24vw, 36vh); max-width: 140px; max-height: 140px; border-radius: 50%;
   background: linear-gradient(135deg, #ff595e, #e63946); color: #fff; font-weight: 900;
-  font-size: min(6vw, 4.5vh); border: none; box-shadow: 0 0 30px rgba(255,89,94,0.5);
+  font-size: min(5vw, 3.6vh); border: none; box-shadow: 0 0 24px rgba(255,89,94,0.5);
 }
 .dash-btn:active { transform: scale(0.92); }
 .dash-btn.on-cooldown { opacity: 0.35; box-shadow: none; }
@@ -78,16 +82,15 @@ html, body {
 
 .hockey-actions {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 3vh; height: 100%;
+  gap: 1.4vh; height: 100%;
 }
 .pass-btn {
-  width: min(28vw, 42vh); height: min(28vw, 42vh); max-width: 160px; max-height: 160px; border-radius: 50%;
+  width: min(18vw, 26vh); height: min(18vw, 26vh); max-width: 100px; max-height: 100px; border-radius: 50%;
   background: linear-gradient(135deg, #52a675, #2f855a); color: #fff; font-weight: 900;
-  font-size: min(4vw, 3.2vh); border: none; box-shadow: 0 0 25px rgba(82,166,117,0.5); line-height: 1.2;
+  font-size: min(3.4vw, 2.6vh); border: none; box-shadow: 0 0 20px rgba(82,166,117,0.5); line-height: 1.15;
 }
-.pass-btn span { font-size: 0.55em; font-weight: 600; opacity: 0.85; }
 .pass-btn:active { transform: scale(0.92); background: linear-gradient(135deg, #6fc491, #3a9d6d); }
-.action-btn { font-size: min(4.2vw, 3.4vh); line-height: 1.15; }
+.action-btn { font-size: min(3.6vw, 2.9vh); line-height: 1.1; }
 
 .ping-badge {
   position: fixed; top: 8px; right: 8px; z-index: 1000;

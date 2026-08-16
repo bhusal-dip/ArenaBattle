@@ -1,6 +1,14 @@
 const TICK_MS = 1000 / 45;
 const MAX_PLAYERS = 10;
 
+// Individual per-player identity colors (independent of team color), used so
+// each player's controller/avatar border has a unique look even though
+// teammates share a team fill color in-game.
+const IDENTITY_COLORS = [
+  '#ea20f8', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93',
+  '#ff924c', '#52a675', '#f72585', '#ff9f1c', '#7209b7',
+];
+
 // --- rink layout (world units, centered at 0,0 — same scale as Arena Battle) ---
 const RINK_HALF_W = 350;
 const RINK_HALF_H = 190;
@@ -26,7 +34,8 @@ const PICKUP_RADIUS = 34;
 const HOLD_OFFSET = 26;
 const SHOOT_SPEED = 640;
 const PASS_SPEED = 380;
-const PASS_PREVIEW_LEN = 260;
+const PASS_FX_LEN = 260; // length of the brief post-pass trail line
+const PASS_FX_DURATION = 320; // ms the trail stays visible after a pass
 const REPICKUP_BLOCK_MS = 260; // brief grace period so a stolen/shot ball can't be instantly re-caught by the same player
 
 const WIN_SCORE = 5;
@@ -50,7 +59,9 @@ class PuckRushRoom {
     this.matchStart = 0;
     this.countdownStartsAt = null;
     this.score = { red: 0, blue: 0 };
-    this.ball = { x: 0, y: 0, vx: 0, vy: 0, holderId: null };
+    this.ball = { x: 0, y: 0, vx: 0, vy: 0, holderId: null, lastShooterId: null, lastShooterTeam: null };
+    this.passFxLine = null;
+    this.passFxUntil = 0;
   }
 
   addPlayer(socketId, name) {
@@ -58,23 +69,26 @@ class PuckRushRoom {
     const redCount = [...this.players.values()].filter((p) => p.team === 'red').length;
     const blueCount = this.players.size - redCount;
     const team = redCount <= blueCount ? 'red' : 'blue';
+    const identityColor = IDENTITY_COLORS[this.players.size % IDENTITY_COLORS.length];
     const player = {
       id: socketId,
       name: (name || 'Player').slice(0, 12),
       color: TEAM_COLOR[team],
+      identityColor,
       team,
       x: team === 'red' ? -150 : 150,
       y: 0,
       vx: 0,
       vy: 0,
-      input: { dx: 0, dy: 0, passHeld: false },
-      prevPassHeld: false,
+      input: { dx: 0, dy: 0 },
       facingX: team === 'red' ? 1 : -1,
       facingY: 0,
       lastDash: -99999,
       dashUntil: 0,
       pickupBlockedUntil: 0,
       pingMs: null,
+      goals: 0,
+      ownGoals: 0,
       connected: true,
     };
     this.players.set(socketId, player);
@@ -112,8 +126,8 @@ class PuckRushRoom {
     if (!p || this.state !== 'playing') return;
     if (typeof input.dx === 'number') p.input.dx = clamp(input.dx, -1, 1);
     if (typeof input.dy === 'number') p.input.dy = clamp(input.dy, -1, 1);
-    if (typeof input.passHeld === 'boolean') p.input.passHeld = input.passHeld;
     if (input.action) this.tryAction(p);
+    if (input.pass) this.tryPass(p);
   }
 
   tryAction(p) {
@@ -128,6 +142,19 @@ class PuckRushRoom {
     }
   }
 
+  // Pass is a single tap now (not hold-to-aim): if you're holding the ball,
+  // it's released immediately toward your current aim direction, plus a
+  // brief fading trail line is shown on the host for feedback.
+  tryPass(p) {
+    if (this.ball.holderId !== p.id) return;
+    const from = { x: this.ball.x, y: this.ball.y };
+    const dir = this.aimDir(p);
+    const to = this.clipToRink(from.x, from.y, dir.x, dir.y, PASS_FX_LEN);
+    this.passFxLine = { from, to, color: p.identityColor };
+    this.passFxUntil = Date.now() + PASS_FX_DURATION;
+    this.releaseBall(p, PASS_SPEED);
+  }
+
   aimDir(p) {
     const mag = Math.hypot(p.input.dx, p.input.dy);
     if (mag > 0.05) return { x: p.input.dx / Math.max(mag, 1), y: p.input.dy / Math.max(mag, 1) };
@@ -139,6 +166,8 @@ class PuckRushRoom {
     this.ball.vx = dir.x * speed;
     this.ball.vy = dir.y * speed;
     this.ball.holderId = null;
+    this.ball.lastShooterId = p.id;
+    this.ball.lastShooterTeam = p.team;
     p.pickupBlockedUntil = Date.now() + REPICKUP_BLOCK_MS;
   }
 
@@ -148,6 +177,7 @@ class PuckRushRoom {
         id: p.id,
         name: p.name,
         color: p.color,
+        identityColor: p.identityColor,
         team: p.team,
         connected: p.connected,
         pingMs: p.pingMs,
@@ -175,12 +205,20 @@ class PuckRushRoom {
     this.ball.vx = 0;
     this.ball.vy = 0;
     this.ball.holderId = null;
+    this.ball.lastShooterId = null;
+    this.ball.lastShooterTeam = null;
+    this.passFxLine = null;
+    this.passFxUntil = 0;
   }
 
   startGame() {
     if (this.players.size < 2 || this.state !== 'lobby') return;
     this.state = 'countdown';
     this.score = { red: 0, blue: 0 };
+    for (const p of this.players.values()) {
+      p.goals = 0;
+      p.ownGoals = 0;
+    }
     this.layoutKickoff();
     const startsAt = Date.now() + 3000;
     this.countdownStartsAt = startsAt;
@@ -211,11 +249,28 @@ class PuckRushRoom {
     this.loopHandle = setInterval(() => this.tick(), TICK_MS);
   }
 
+  // scoringTeam is whichever team's GOAL the ball entered (i.e. the team
+  // that benefits). The shooter is read from ball.lastShooterId — if their
+  // team differs from scoringTeam, it's an own goal, credited/blamed
+  // accordingly, but the score always goes to the team whose net it wasn't.
   scoreGoal(scoringTeam) {
     this.score[scoringTeam] += 1;
-    this.io.to(this.code).emit('goal:scored', { team: scoringTeam, score: { ...this.score } });
+    const shooter = this.ball.lastShooterId ? this.players.get(this.ball.lastShooterId) : null;
+    const ownGoal = !!(shooter && shooter.team !== scoringTeam);
+    if (shooter) {
+      if (ownGoal) shooter.ownGoals += 1;
+      else shooter.goals += 1;
+    }
+    this.io.to(this.code).emit('goal:scored', {
+      team: scoringTeam,
+      score: { ...this.score },
+      scorerId: shooter ? shooter.id : null,
+      scorerName: shooter ? shooter.name : null,
+      scorerColor: shooter ? shooter.identityColor : null,
+      ownGoal,
+    });
     this.layoutKickoff();
-    if (this.score[scoringTeam] >= WIN_SCORE) this.endGame();
+    // if (this.score[scoringTeam] >= WIN_SCORE) this.endGame();
   }
 
   tick() {
@@ -304,6 +359,23 @@ class PuckRushRoom {
       this.ball.y = holder.y + dir.y * HOLD_OFFSET;
       this.ball.vx = 0;
       this.ball.vy = 0;
+
+      // A carried ball can also score (including into your OWN net) if you
+      // walk it across the goal line — not just shots/passes.
+      if (Math.abs(this.ball.y) < GOAL_HALF_H) {
+        if (this.ball.x > RINK_HALF_W - BALL_RADIUS) {
+          this.ball.lastShooterId = holder.id;
+          this.ball.lastShooterTeam = holder.team;
+          this.scoreGoal('red');
+          return;
+        }
+        if (this.ball.x < -RINK_HALF_W + BALL_RADIUS) {
+          this.ball.lastShooterId = holder.id;
+          this.ball.lastShooterTeam = holder.team;
+          this.scoreGoal('blue');
+          return;
+        }
+      }
     } else {
       const speed = Math.hypot(this.ball.vx, this.ball.vy);
       if (speed > 0) {
@@ -324,7 +396,7 @@ class PuckRushRoom {
 
       if (this.ball.x > RINK_HALF_W - BALL_RADIUS) {
         if (Math.abs(this.ball.y) < GOAL_HALF_H) {
-          this.scoreGoal('red'); // ball crossed blue's line -> red scores
+          this.scoreGoal('red'); // ball crossed blue's line -> red scores (own goal if the shooter was on red)
           return;
         }
         this.ball.x = RINK_HALF_W - BALL_RADIUS;
@@ -352,20 +424,6 @@ class PuckRushRoom {
       if (best) this.ball.holderId = best.id;
     }
 
-    // --- pass: charge while held, release on button-up ---
-    let passPreview = null;
-    for (const p of players) {
-      if (this.ball.holderId === p.id && p.input.passHeld) {
-        const dir = this.aimDir(p);
-        const to = this.clipToRink(this.ball.x, this.ball.y, dir.x, dir.y, PASS_PREVIEW_LEN);
-        passPreview = { from: { x: this.ball.x, y: this.ball.y }, to, color: p.color };
-      }
-      if (p.prevPassHeld && !p.input.passHeld && this.ball.holderId === p.id) {
-        this.releaseBall(p, PASS_SPEED);
-      }
-      p.prevPassHeld = p.input.passHeld;
-    }
-
     // --- match timer ---
     const elapsed = now - this.matchStart;
     const timeRemaining = Math.max(0, MATCH_DURATION - elapsed);
@@ -379,17 +437,20 @@ class PuckRushRoom {
       score: { ...this.score },
       timeRemaining,
       ball: { x: this.ball.x, y: this.ball.y, holderId: this.ball.holderId },
-      passPreview,
+      passPreview: now < this.passFxUntil ? this.passFxLine : null,
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         color: p.color,
+        identityColor: p.identityColor,
         team: p.team,
         x: p.x,
         y: p.y,
         dashing: now < p.dashUntil,
         connected: p.connected,
         pingMs: p.pingMs,
+        goals: p.goals,
+        ownGoals: p.ownGoals,
       })),
     });
   }

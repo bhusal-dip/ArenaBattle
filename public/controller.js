@@ -59,6 +59,24 @@ const NAME_KEY = 'partyGamesPlayerName';
 const savedName = localStorage.getItem(NAME_KEY);
 if (savedName) nameInput.value = savedName;
 
+// Tint the page background with the player's identity color, blended toward
+// the dark base so text stays readable regardless of which color they got.
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [parseInt(h.substring(0, 2), 16), parseInt(h.substring(2, 4), 16), parseInt(h.substring(4, 6), 16)];
+}
+function blendWithBase(hex, ratio) {
+  const BASE = [10, 12, 26]; // matches --bg #0a0c1a
+  const [r1, g1, b1] = hexToRgb(hex);
+  const r = Math.round(r1 * ratio + BASE[0] * (1 - ratio));
+  const g = Math.round(g1 * ratio + BASE[1] * (1 - ratio));
+  const b = Math.round(b1 * ratio + BASE[2] * (1 - ratio));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+function applyIdentityTheme(hex) {
+  document.body.style.background = blendWithBase(hex, 0.4);
+}
+
 // Pre-fill room code from ?room=XXXX in the QR link
 const params = new URLSearchParams(window.location.search);
 if (params.get('room')) roomInput.value = params.get('room').toUpperCase();
@@ -66,7 +84,6 @@ if (params.get('room')) roomInput.value = params.get('room').toUpperCase();
 let myId = null;
 let myGameType = 'arena';
 let eliminatedThisRound = false;
-let passHeld = false;
 
 joinBtn.addEventListener('click', doJoin);
 function doJoin() {
@@ -91,8 +108,10 @@ function doJoin() {
     myGameType = res.gameType;
     eliminatedThisRound = false;
 
-    mySwatch.style.background = res.player.color;
-    mySwatch.style.color = res.player.color;
+    const identityColor = res.player.identityColor || res.player.color;
+    mySwatch.style.background = identityColor;
+    mySwatch.style.color = identityColor;
+    applyIdentityTheme(identityColor);
     waitingHint.textContent = res.player.team
       ? `You're in! Team ${res.player.team.toUpperCase()} — waiting for host to start…`
       : "You're in! Waiting for host to start…";
@@ -122,8 +141,9 @@ teamBlueBtn.addEventListener('click', () => socket.emit('player:selectTeam', { t
 socket.on('lobby:update', ({ players }) => {
   const me = players.find((p) => p.id === myId);
   if (!me) return;
-  mySwatch.style.background = me.color;
-  mySwatch.style.color = me.color;
+  const identityColor = me.identityColor || me.color;
+  mySwatch.style.background = identityColor;
+  mySwatch.style.color = identityColor;
   if (me.team) {
     teamRedBtn.classList.toggle('active', me.team === 'red');
     teamBlueBtn.classList.toggle('active', me.team === 'blue');
@@ -171,8 +191,9 @@ socket.on('player:eliminated', ({ id, placement }) => {
   showScreen(statusScreen);
 });
 
-socket.on('goal:scored', ({ team }) => {
-  if (navigator.vibrate) navigator.vibrate(team ? 50 : 0);
+socket.on('goal:scored', ({ scorerId, ownGoal }) => {
+  if (!navigator.vibrate) return;
+  if (scorerId === myId) navigator.vibrate(ownGoal ? [30, 40, 30, 40, 30] : [50, 30, 90]);
 });
 
 socket.on('game:ended', (payload) => {
@@ -216,26 +237,19 @@ actionBtn.addEventListener('pointerdown', (e) => {
   if (navigator.vibrate) navigator.vibrate(35);
 });
 
-// ---- Puck Rush: Pass — hold to aim (server streams back a live preview line
-// on the host screen), release to throw. Only does anything if you're holding the ball. ----
+// ---- Puck Rush: Pass — a single tap, same pattern as Shoot/Dash. Only does
+// anything if you're currently holding the ball; the host briefly shows a
+// fading trail along the pass line for feedback. ----
 passBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  passHeld = true;
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, pass: true });
+  if (navigator.vibrate) navigator.vibrate(30);
 });
-function releasePass() {
-  if (!passHeld) return;
-  passHeld = false;
-  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, passHeld: false });
-}
-passBtn.addEventListener('pointerup', releasePass);
-passBtn.addEventListener('pointercancel', releasePass);
 
-// ---- Send movement (+ hockey pass-hold state) at a steady low-latency rate ----
+// ---- Send movement at a steady low-latency rate ----
 setInterval(() => {
   if (controllerScreen.classList.contains('hidden') || eliminatedThisRound) return;
-  const payload = { dx: joystick.dx, dy: joystick.dy };
-  if (myGameType === 'hockey') payload.passHeld = passHeld;
-  socket.emit('player:input', payload);
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy });
 }, 50); // 20 times/sec
 
 // ---- Latency badge (visible at all times, updates every 2s) ----

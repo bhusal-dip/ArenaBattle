@@ -55,6 +55,7 @@ class ArenaBattleRoom {
       id: socketId,
       name: (name || 'Player').slice(0, 12),
       color,
+      identityColor: color, // Arena Battle colors are already unique per player
       x: Math.cos(angle) * spawnR,
       y: Math.sin(angle) * spawnR,
       vx: 0,
@@ -110,6 +111,7 @@ class ArenaBattleRoom {
         id: p.id,
         name: p.name,
         color: p.color,
+        identityColor: p.identityColor,
         connected: p.connected,
         pingMs: p.pingMs,
       })),
@@ -289,6 +291,7 @@ class ArenaBattleRoom {
         id: p.id,
         name: p.name,
         color: p.color,
+        identityColor: p.identityColor,
         x: p.x,
         y: p.y,
         hp: p.hp,

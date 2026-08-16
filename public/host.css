@@ -9,6 +9,7 @@ html, body {
 
 .screen {
   height: 100vh; width: 100vw;
+  position: relative;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 24px;
 }
@@ -44,6 +45,13 @@ html, body {
   background: rgba(255,255,255,0.06); display: flex; align-items: center; gap: 8px;
 }
 .player-list .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.team-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 5px; font-size: 0.7rem; font-weight: 900;
+  color: #fff; flex-shrink: 0;
+}
+.team-badge-red { background: #e63946; }
+.team-badge-blue { background: #4cc9f0; }
 
 .btn {
   font-size: 1.3vw; font-weight: 700; padding: 16px 40px; border-radius: 14px;
@@ -112,6 +120,40 @@ html, body {
 .score-red { color: #e63946; }
 .score-blue { color: #4cc9f0; }
 .match-clock { font-size: 1.3vw; font-weight: 700; color: #f4f4f8; letter-spacing: 1px; }
+
+.code-badge {
+  position: fixed; top: 16px; right: 16px; z-index: 500;
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(0,0,0,0.5); border-radius: 12px; padding: 8px 14px;
+  backdrop-filter: blur(4px);
+}
+.code-badge-qr { width: 52px; height: 52px; border-radius: 6px; background: #fff; padding: 3px; }
+.code-badge-text { display: flex; flex-direction: column; line-height: 1.2; }
+.code-badge-label { font-size: 0.65rem; letter-spacing: 1px; color: #9aa0c3; font-weight: 700; }
+#code-badge-code { font-size: 1.3rem; font-weight: 800; color: #ffca3a; letter-spacing: 1px; }
+
+.goal-log {
+  position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 60vw;
+}
+.goal-chip {
+  font-size: 0.85vw; font-weight: 700; padding: 4px 12px; border-radius: 999px;
+  background: rgba(0,0,0,0.4); display: flex; align-items: center; gap: 6px;
+}
+.goal-chip .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.goal-chip.own-goal { color: #ffb4b4; }
+
+.confetti-layer {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+}
+.confetti-piece {
+  position: absolute; top: -20px; width: 10px; height: 16px; opacity: 0.9;
+  animation: confetti-fall linear forwards;
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0.3; }
+}
 
 .announcements {
   position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);

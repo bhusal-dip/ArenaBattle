@@ -25,6 +25,11 @@ const winnerNameEl = document.getElementById('winner-name');
 const restartBtn = document.getElementById('restart-btn');
 const changeGameBtn = document.getElementById('change-game-btn');
 const announcementsEl = document.getElementById('announcements');
+const codeBadge = document.getElementById('code-badge');
+const codeBadgeQr = document.getElementById('code-badge-qr');
+const codeBadgeCode = document.getElementById('code-badge-code');
+const goalLogEl = document.getElementById('goal-log');
+const confettiLayer = document.getElementById('confetti-layer');
 
 const GAME_LABELS = { arena: 'Arena Battle', hockey: 'Puck Rush' };
 const RENDER_SCALE = 1.35; // zoom factor for the shared display, purely visual
@@ -43,6 +48,13 @@ function applyGameTypeChrome(gameType) {
   lobbyTitle.innerHTML = `${GAME_LABELS[gameType].toUpperCase()} <span>LOBBY</span>`;
   scoreHud.classList.toggle('hidden', gameType !== 'hockey');
   hpBarsEl.classList.toggle('hidden', gameType !== 'arena');
+  goalLogEl.classList.toggle('hidden', gameType !== 'hockey');
+}
+
+function updateCodeBadge(code, qrDataUrl) {
+  codeBadgeCode.textContent = code;
+  if (qrDataUrl) codeBadgeQr.src = qrDataUrl;
+  codeBadge.classList.remove('hidden');
 }
 
 // ---- Sound (synthesized, no audio files needed — works with zero internet on-site) ----
@@ -117,6 +129,7 @@ socket.on('host:created', ({ code, joinUrl, qrDataUrl, gameType }) => {
   roomCodeText.textContent = code;
   joinUrlText.textContent = joinUrl;
   if (qrDataUrl) qrImg.src = qrDataUrl;
+  updateCodeBadge(code, qrDataUrl);
   showScreen(lobbyScreen);
 });
 
@@ -131,14 +144,17 @@ socket.on('lobby:update', ({ players }) => {
   playerListEl.innerHTML = '';
   players.forEach((p) => {
     const li = document.createElement('li');
-    const teamTag = p.team ? ` (${p.team})` : '';
+    const dotColor = p.identityColor || p.color;
+    const teamBadge = p.team
+      ? `<span class="team-badge team-badge-${p.team}">${p.team === 'red' ? 'R' : 'B'}</span>`
+      : '';
     const pingTag = typeof p.pingMs === 'number' ? `<span class="ping-tag">${p.pingMs}ms</span>` : '';
-    li.innerHTML = `<span class="dot" style="background:${p.color}"></span>${p.name}${teamTag}${pingTag}`;
+    li.innerHTML = `<span class="dot" style="background:${dotColor}"></span>${teamBadge}${p.name}${pingTag}`;
     if (!p.connected) li.style.opacity = '0.4';
     playerListEl.appendChild(li);
   });
-  startBtn.disabled = players.length < 1;
-  startBtn.textContent = players.length < 1 ? 'Need at least 2 players…' : `Start Game (${players.length} players)`;
+  startBtn.disabled = players.length < 2;
+  startBtn.textContent = players.length < 2 ? 'Need at least 2 players…' : `Start Game (${players.length} players)`;
 });
 
 startBtn.addEventListener('click', () => {
@@ -148,12 +164,14 @@ startBtn.addEventListener('click', () => {
 
 // Same room, same game, fresh round — players stay connected the whole time.
 restartBtn.addEventListener('click', () => {
+  confettiLayer.innerHTML = '';
   showScreen(lobbyScreen);
   socket.emit('host:restart');
 });
 
 // Same room, different game — connected players get moved over automatically.
 changeGameBtn.addEventListener('click', () => {
+  confettiLayer.innerHTML = '';
   showScreen(selectScreen);
 });
 
@@ -181,8 +199,22 @@ socket.on('state:update', (state) => {
     scoreBlueEl.textContent = state.score.blue;
     const secs = Math.ceil(state.timeRemaining / 1000);
     matchClockEl.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    renderGoalLog(state.players);
   }
 });
+
+function renderGoalLog(players) {
+  const scorers = players.filter((p) => p.goals > 0 || p.ownGoals > 0);
+  goalLogEl.innerHTML = scorers
+    .map((p) => {
+      const parts = [];
+      if (p.goals > 0) parts.push(`×${p.goals}`);
+      if (p.ownGoals > 0) parts.push(`OG ×${p.ownGoals}`);
+      const cls = p.ownGoals > 0 && p.goals === 0 ? 'goal-chip own-goal' : 'goal-chip';
+      return `<span class="${cls}"><span class="dot" style="background:${p.identityColor || p.color}"></span>${p.name} ${parts.join(' ')}</span>`;
+    })
+    .join('');
+}
 
 socket.on('fx:hit', () => playHitSound());
 socket.on('fx:steal', () => playHitSound());
@@ -192,10 +224,16 @@ socket.on('player:eliminated', ({ name, color, placement }) => {
   showAnnouncement(`${name} eliminated — ${ordinal(placement)} place`, color);
 });
 
-socket.on('goal:scored', ({ team }) => {
+socket.on('goal:scored', ({ team, scorerName, scorerColor, ownGoal }) => {
   playGoalSound();
-  const color = team === 'red' ? '#e63946' : '#4cc9f0';
-  showAnnouncement(`GOAL! ${team.toUpperCase()} scores`, color);
+  const teamColor = team === 'red' ? '#e63946' : '#4cc9f0';
+  if (ownGoal && scorerName) {
+    showAnnouncement(`OWN GOAL! ${scorerName} — ${team.toUpperCase()} benefits`, '#ffb4b4');
+  } else if (scorerName) {
+    showAnnouncement(`GOAL! ${scorerName} scores for ${team.toUpperCase()}`, scorerColor || teamColor);
+  } else {
+    showAnnouncement(`GOAL! ${team.toUpperCase()} scores`, teamColor);
+  }
 });
 
 socket.on('game:ended', (payload) => {
@@ -205,6 +243,7 @@ socket.on('game:ended', (payload) => {
     if (winnerTeam) {
       winnerNameEl.textContent = `${winnerTeam.toUpperCase()} WINS ${score.red}–${score.blue}`;
       winnerNameEl.style.color = winnerTeam === 'red' ? '#e63946' : '#4cc9f0';
+      launchConfetti(winnerTeam === 'red' ? ['#e63946', '#ff595e', '#ffca3a'] : ['#4cc9f0', '#4361ee', '#8ac926']);
     } else {
       winnerNameEl.textContent = `DRAW ${score.red}–${score.blue}`;
       winnerNameEl.style.color = '#fff';
@@ -213,9 +252,28 @@ socket.on('game:ended', (payload) => {
     const { winner } = payload;
     winnerNameEl.textContent = winner ? winner.name : 'No one (draw)';
     winnerNameEl.style.color = winner ? winner.color : '#fff';
+    if (winner) launchConfetti([winner.color, '#ffca3a', '#8ac926', '#4cc9f0']);
   }
   showScreen(endScreen);
 });
+
+function launchConfetti(colors) {
+  confettiLayer.innerHTML = '';
+  const pieceCount = 80;
+  for (let i = 0; i < pieceCount; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.left = `${Math.random() * 100}%`;
+    piece.style.background = colors[i % colors.length];
+    piece.style.animationDuration = `${2.2 + Math.random() * 1.6}s`;
+    piece.style.animationDelay = `${Math.random() * 0.6}s`;
+    piece.style.transform = `rotate(${Math.random() * 360}deg)`;
+    confettiLayer.appendChild(piece);
+  }
+  setTimeout(() => {
+    confettiLayer.innerHTML = '';
+  }, 4500);
+}
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -269,8 +327,8 @@ function renderArena(state) {
     if (p.dashing) { ctx.shadowColor = p.color; ctx.shadowBlur = 25; }
     ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = p.identityColor || '#fff';
+    ctx.lineWidth = 3;
     ctx.stroke();
 
     ctx.font = 'bold 14px sans-serif';
@@ -337,8 +395,8 @@ function renderHockey(state) {
     if (p.dashing) { ctx.shadowColor = p.color; ctx.shadowBlur = 22; }
     ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = p.identityColor || '#fff';
+    ctx.lineWidth = 3;
     ctx.stroke();
     ctx.font = 'bold 13px sans-serif';
     ctx.fillStyle = '#fff';

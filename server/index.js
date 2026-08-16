@@ -120,7 +120,13 @@ io.on('connection', (socket) => {
         gameType: room.gameType,
         phase: room.state, // 'lobby' | 'countdown' | 'playing' | 'ended' -- lets a late joiner drop straight into a live game
         countdownStartsAt: room.countdownStartsAt || null,
-        player: { id: player.id, name: player.name, color: player.color, team: player.team },
+        player: {
+          id: player.id,
+          name: player.name,
+          color: player.color,
+          identityColor: player.identityColor,
+          team: player.team,
+        },
       });
     room.broadcastLobby();
   });
