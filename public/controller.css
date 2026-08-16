@@ -60,7 +60,7 @@ html, body {
 .controller-layout {
   height: 100vh; height: 100dvh;
   flex-direction: row; justify-content: space-between; align-items: center;
-  padding: 1.5vh 3vw;
+  padding: 1.5vh 10vw;
 }
 
 .joystick-zone { flex: 1; display: flex; align-items: center; justify-content: flex-start; height: 100%; }

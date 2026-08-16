@@ -198,6 +198,21 @@ connection rather than local WiFi:
   in the same tab), it reclaims the same room/code seamlessly. Only if the
   host genuinely doesn't come back within that window does the room get
   cleaned up.
+- **WebSocket-only connections + an always-on machine.** Players being
+  totally unable to connect (repeated `400 Bad Request` in the browser
+  console, a new session ID each retry) traced back to two compounding
+  issues: (1) `fly.toml` had `auto_stop_machines` enabled with
+  `min_machines_running = 0`, so Fly could stop/restart the machine mid
+  connection, wiping in-memory state; and (2) Socket.io's default handshake
+  is multiple separate HTTP requests (a polling request, then a separate
+  upgrade request) that all need to land on the exact same running process
+  to continue the same session. Both are now fixed: `fly.toml` keeps the
+  machine always running (`auto_stop_machines = 'off'`,
+  `min_machines_running = 1`), and both `host.js`/`controller.js` connect
+  with `transports: ['websocket']`, so it's a single persistent connection
+  from the start instead of a multi-request handshake. Note this trades away
+  Fly's scale-to-zero cost savings — a stateful real-time server like this
+  one genuinely needs to stay running continuously.
 
 ## Credits
 

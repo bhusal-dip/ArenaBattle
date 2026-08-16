@@ -1,4 +1,12 @@
-const socket = io();
+// By default Socket.io does a multi-step handshake: an HTTP polling request
+// first, THEN a separate upgrade request to promote it to a WebSocket. Each
+// of those is a distinct HTTP request that has to land on the same backend
+// process to continue the same session. On some hosts that isn't guaranteed
+// request-to-request, which shows up as repeated "400 Bad Request"/session
+// errors and an endless reconnect loop. Going straight to a single
+// WebSocket sidesteps that entirely — one request, one persistent
+// connection, nothing else has to match up afterward.
+const socket = io({ transports: ['websocket'] });
 
 const selectScreen = document.getElementById('select-screen');
 const lobbyScreen = document.getElementById('lobby-screen');

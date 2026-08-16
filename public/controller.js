@@ -1,4 +1,6 @@
-const socket = io();
+// See host.js for why this connects via WebSocket only instead of the
+// default polling-then-upgrade handshake.
+const socket = io({ transports: ['websocket'] });
 
 const joinScreen = document.getElementById('join-screen');
 const waitingScreen = document.getElementById('waiting-screen');

@@ -8,19 +8,21 @@ primary_region = 'bom'
 
 [build]
 
-# This is the actual fix for the wrong join-link problem: it forces the QR
-# code / join URL to always use your real public Fly.io URL instead of
-# guessing from the incoming request, which isn't reliable behind Fly's proxy.
-
+# This is the fix for the "players can't connect" bug: with auto-stop
+# enabled and zero minimum machines, Fly can stop/restart the machine
+# between the several HTTP requests Socket.io's handshake needs, which
+# invalidates the in-progress connection (seen as repeated 400s with a new
+# session ID each time in the browser console) and wipes all in-memory game
+# state. A stateful real-time server like this one needs to stay running.
 [env]
   PUBLIC_BASE_URL = "https://console-cloud.fly.dev"
 
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = 'off'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ['app']
 
 [[vm]]
