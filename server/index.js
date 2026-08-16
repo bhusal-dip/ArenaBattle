@@ -19,8 +19,14 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN
   : undefined;
 
 const io = new Server(server, {
-  pingInterval: 2000,
-  pingTimeout: 5000,
+  // These were tuned tight (2s/5s) for LAN-only use, where near-zero latency
+  // meant fast disconnect detection with no downside. Over a real internet
+  // connection (as on a cloud host), a brief blip can exceed 5s easily —
+  // and when the HOST's socket gets marked disconnected, the room used to
+  // be destroyed immediately, silently invalidating the QR code/room code
+  // still shown on screen. More tolerant, closer-to-standard values here.
+  pingInterval: 10000,
+  pingTimeout: 20000,
   cors: CORS_ORIGIN ? { origin: CORS_ORIGIN, methods: ['GET', 'POST'] } : undefined,
 });
 
@@ -158,6 +164,21 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Lets a host's browser recover the SAME room (same code/QR) after a
+  // reconnect, instead of the room having been destroyed while it was
+  // briefly disconnected.
+  socket.on('host:reclaim', ({ code } = {}, ack) => {
+    const room = rooms.get((code || '').toUpperCase());
+    if (!room) return ack && ack({ ok: false });
+    clearTimeout(room.hostGraceTimer);
+    room.hostSocketId = socket.id;
+    socket.join(room.code);
+    socket.data.role = 'host';
+    socket.data.roomCode = room.code;
+    ack && ack({ ok: true, gameType: room.gameType, phase: room.state });
+    room.broadcastLobby();
+  });
+
   socket.on('host:start', () => {
     const room = rooms.get(socket.data.roomCode);
     if (room && socket.data.role === 'host') room.startGame();
@@ -186,12 +207,26 @@ io.on('connection', (socket) => {
     }
   });
 
+  // A brief host disconnect (WiFi blip, laptop sleep, tab backgrounding,
+  // Fly's proxy recycling an idle connection) is common on a real internet
+  // connection and should NOT silently invalidate the QR code/room code
+  // still shown on screen. Give the host a window to reconnect and reclaim
+  // the same room before actually tearing it down.
+  const HOST_RECONNECT_GRACE_MS = 45000;
+
   socket.on('disconnect', () => {
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
     if (socket.data.role === 'host') {
-      room.destroy();
-      rooms.delete(room.code);
+      if (room.hostSocketId !== socket.id) return; // a newer host connection already replaced this one
+      room.hostSocketId = null;
+      clearTimeout(room.hostGraceTimer);
+      room.hostGraceTimer = setTimeout(() => {
+        if (room.hostSocketId === null) {
+          room.destroy();
+          rooms.delete(room.code);
+        }
+      }, HOST_RECONNECT_GRACE_MS);
     } else if (socket.data.role === 'player') {
       room.removePlayer(socket.data.playerId);
       room.broadcastLobby();

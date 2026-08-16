@@ -179,6 +179,26 @@ safely can without ever overflowing it, on any display.
   a "rotate your phone" prompt covers the screen until it's rotated. The
   join screen (typing name/room code) stays usable in portrait.
 
+## Connection resilience (important for hosting online)
+
+Two settings that only matter once this runs over a real internet
+connection rather than local WiFi:
+
+- **Ping timeout.** The original LAN-tuned values (2s interval / 5s timeout)
+  were fast to detect a genuinely dropped connection, but too aggressive for
+  normal internet jitter — a brief blip could get misread as a full
+  disconnect. These are now more tolerant (10s / 20s).
+- **Host reconnect grace period.** Previously, the instant the host's socket
+  disconnected (WiFi hiccup, laptop sleep, tab backgrounding, a cloud host's
+  proxy recycling an idle connection), the room was destroyed immediately —
+  silently invalidating the QR code/room code still shown on screen, so
+  players trying to join got "Room not found" with no obvious cause. The
+  room now survives for 45 seconds after a host disconnect; if the host's
+  browser reconnects within that window (Socket.io does this automatically
+  in the same tab), it reclaims the same room/code seamlessly. Only if the
+  host genuinely doesn't come back within that window does the room get
+  cleaned up.
+
 ## Credits
 
 Created by **Sudip Bhusal**.

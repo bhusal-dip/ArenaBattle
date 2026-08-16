@@ -38,6 +38,31 @@ const HIGH_PING_MS = 200; // above this, flag the player on-screen as having a c
 
 let currentGameType = 'arena';
 let hasCreatedRoom = false; // true once a room exists; further game picks reuse the same room/code
+let myRoomCode = null;
+let hasConnectedBefore = false;
+
+// If the socket drops and reconnects (a brief WiFi blip, laptop sleep, or a
+// cloud host's proxy recycling an idle connection are all common over the
+// internet, unlike on local WiFi), try to reclaim the SAME room instead of
+// leaving the player-facing QR code/room code silently pointing at a dead
+// room. The server keeps the room alive for a short grace window for
+// exactly this.
+socket.on('connect', () => {
+  if (hasConnectedBefore && myRoomCode) {
+    socket.emit('host:reclaim', { code: myRoomCode }, (res) => {
+      if (!res || !res.ok) {
+        // The grace window expired before we reconnected — nothing left to
+        // reclaim, so start over cleanly rather than showing a stuck screen.
+        myRoomCode = null;
+        hasCreatedRoom = false;
+        showScreen(selectScreen);
+      }
+      // On success, the next lobby:update/state:update naturally resyncs
+      // everything else — no further action needed here.
+    });
+  }
+  hasConnectedBefore = true;
+});
 
 function showScreen(el) {
   [selectScreen, lobbyScreen, countdownScreen, gameScreen, endScreen].forEach((s) => s.classList.add('hidden'));
@@ -156,6 +181,7 @@ document.querySelectorAll('.game-card-play').forEach((btn) => {
 
 socket.on('host:created', ({ code, joinUrl, qrDataUrl, gameType }) => {
   hasCreatedRoom = true;
+  myRoomCode = code;
   applyGameTypeChrome(gameType);
   roomCodeText.textContent = code;
   joinUrlText.textContent = joinUrl;
