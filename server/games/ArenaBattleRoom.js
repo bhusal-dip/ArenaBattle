@@ -4,8 +4,16 @@ const COLORS = [
 ];
 
 const MAX_PLAYERS = 10;
-const ARENA_R0 = 380;
-const ARENA_MIN = 150;
+
+// Arena size profiles. "large" scales both the starting and minimum radius
+// by ~1.6x, giving noticeably more room to maneuver — especially useful
+// with more players. Actual on-screen size is scaled adaptively by the host
+// display to fit any screen, so a bigger world radius here always translates
+// to "more room to move" without ever risking overflowing the screen.
+const ARENA_PROFILES = {
+  default: { r0: 380, min: 150 },
+  large: { r0: 608, min: 240 },
+};
 const SHRINK_DURATION = 90000; // ms, time for arena to reach minimum size
 const TICK_MS = 1000 / 45; // server simulation tick rate
 const PLAYER_RADIUS = 18;
@@ -29,28 +37,40 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-class Room {
-  constructor(code, io) {
+class ArenaBattleRoom {
+  constructor(code, io, options = {}) {
     this.code = code;
     this.io = io;
+    this.gameType = 'arena';
     this.state = 'lobby'; // lobby | countdown | playing | ended
     this.players = new Map(); // socketId -> player
     this.hostSocketId = null;
     this.loopHandle = null;
     this.matchStart = 0;
+    this.countdownStartsAt = null;
     this.remainingCount = 0; // used to compute elimination placements
+
+    const profile = ARENA_PROFILES[options.arenaSize] ? options.arenaSize : 'default';
+    this.arenaSize = profile;
+    this.arenaR0 = ARENA_PROFILES[profile].r0;
+    this.arenaMin = ARENA_PROFILES[profile].min;
   }
 
   addPlayer(socketId, name) {
     if (this.players.size >= MAX_PLAYERS) return null;
     const color = COLORS[this.players.size % COLORS.length];
     const angle = Math.random() * Math.PI * 2;
+    // Late joiners (state === 'playing') spawn safely inside the current
+    // shrinking arena instead of at a fixed radius that might already be
+    // outside the zone.
+    const spawnR = this.state === 'playing' ? Math.min(100, this.currentArenaRadius() * 0.4) : 100;
     const player = {
       id: socketId,
       name: (name || 'Player').slice(0, 12),
       color,
-      x: Math.cos(angle) * 100,
-      y: Math.sin(angle) * 100,
+      identityColor: color, // Arena Battle colors are already unique per player
+      x: Math.cos(angle) * spawnR,
+      y: Math.sin(angle) * spawnR,
       vx: 0,
       vy: 0,
       hp: HP_MAX,
@@ -59,9 +79,13 @@ class Room {
       lastDash: -99999,
       dashUntil: 0,
       stunUntil: 0,
+      pingMs: null,
       connected: true,
     };
     this.players.set(socketId, player);
+    // A player joining mid-round (or during the pre-round countdown) should
+    // still count toward the pool used to compute elimination placements.
+    if (this.state === 'countdown' || this.state === 'playing') this.remainingCount += 1;
     return player;
   }
 
@@ -89,13 +113,20 @@ class Room {
     }
   }
 
+  setPing(id, ms) {
+    const p = this.players.get(id);
+    if (p) p.pingMs = typeof ms === 'number' ? Math.round(ms) : null;
+  }
+
   broadcastLobby() {
     this.io.to(this.code).emit('lobby:update', {
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         color: p.color,
+        identityColor: p.identityColor,
         connected: p.connected,
+        pingMs: p.pingMs,
       })),
     });
   }
@@ -105,10 +136,12 @@ class Room {
     this.state = 'countdown';
     this.remainingCount = this.players.size;
     const startsAt = Date.now() + 3000;
+    this.countdownStartsAt = startsAt;
     this.io.to(this.code).emit('game:countdown', { startsAt });
     setTimeout(() => {
       if (this.state !== 'countdown') return;
       this.state = 'playing';
+      this.countdownStartsAt = null;
       this.matchStart = Date.now();
       this.beginLoop();
     }, 3000);
@@ -116,6 +149,7 @@ class Room {
 
   resetToLobby() {
     this.state = 'lobby';
+    this.countdownStartsAt = null;
     clearInterval(this.loopHandle);
     for (const [id, p] of [...this.players.entries()]) {
       if (!p.connected) {
@@ -132,6 +166,7 @@ class Room {
       p.stunUntil = 0;
     }
     this.broadcastLobby();
+    this.io.to(this.code).emit('game:reset');
   }
 
   beginLoop() {
@@ -142,7 +177,7 @@ class Room {
   currentArenaRadius() {
     const elapsed = Date.now() - this.matchStart;
     const t = clamp(elapsed / SHRINK_DURATION, 0, 1);
-    return ARENA_R0 - (ARENA_R0 - ARENA_MIN) * t;
+    return this.arenaR0 - (this.arenaR0 - this.arenaMin) * t;
   }
 
   tick() {
@@ -265,15 +300,18 @@ class Room {
 
     this.io.to(this.code).emit('state:update', {
       arenaR: R,
+      arenaR0: this.arenaR0,
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,
         color: p.color,
+        identityColor: p.identityColor,
         x: p.x,
         y: p.y,
         hp: p.hp,
         alive: p.alive,
         dashing: now < p.dashUntil,
+        pingMs: p.pingMs,
       })),
     });
   }
@@ -282,6 +320,7 @@ class Room {
     this.state = 'ended';
     clearInterval(this.loopHandle);
     this.io.to(this.code).emit('game:ended', {
+      mode: 'arena',
       winner: winner ? { id: winner.id, name: winner.name, color: winner.color } : null,
     });
   }
@@ -291,4 +330,4 @@ class Room {
   }
 }
 
-module.exports = { Room, MAX_PLAYERS };
+module.exports = { ArenaBattleRoom, MAX_PLAYERS };

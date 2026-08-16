@@ -4,29 +4,85 @@ const joinScreen = document.getElementById('join-screen');
 const waitingScreen = document.getElementById('waiting-screen');
 const controllerScreen = document.getElementById('controller-screen');
 const statusScreen = document.getElementById('status-screen');
+const rotateHint = document.getElementById('rotate-hint');
 
 const roomInput = document.getElementById('room-input');
 const nameInput = document.getElementById('name-input');
 const joinBtn = document.getElementById('join-btn');
 const joinError = document.getElementById('join-error');
 const mySwatch = document.getElementById('my-swatch');
+const waitingHint = document.getElementById('waiting-hint');
+const teamSelect = document.getElementById('team-select');
+const teamRedBtn = document.getElementById('team-red-btn');
+const teamBlueBtn = document.getElementById('team-blue-btn');
+const pingBadge = document.getElementById('ping-badge');
 
 const joystickBase = document.getElementById('joystick-base');
 const joystickKnob = document.getElementById('joystick-knob');
+const actionsArena = document.getElementById('actions-arena');
+const actionsHockey = document.getElementById('actions-hockey');
 const dashBtn = document.getElementById('dash-btn');
+const passBtn = document.getElementById('pass-btn');
+const actionBtn = document.getElementById('action-btn');
 const statusText = document.getElementById('status-text');
+
+const joystick = createJoystick(joystickBase, joystickKnob);
+
+// Screens that need the phone in landscape to be usable.
+const LANDSCAPE_SCREENS = [waitingScreen, controllerScreen, statusScreen];
 
 function showScreen(el) {
   [joinScreen, waitingScreen, controllerScreen, statusScreen].forEach((s) => s.classList.add('hidden'));
   el.classList.remove('hidden');
+  updateRotateHint();
+}
+
+function updateRotateHint() {
+  const isPortrait = window.matchMedia('(orientation: portrait)').matches;
+  const needsLandscape = LANDSCAPE_SCREENS.some((s) => !s.classList.contains('hidden'));
+  rotateHint.classList.toggle('hidden', !(isPortrait && needsLandscape));
+}
+window.addEventListener('resize', updateRotateHint);
+window.addEventListener('orientationchange', updateRotateHint);
+
+function tryLockLandscape() {
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock('landscape').catch(() => {
+      /* Not supported on this browser (common on iOS Safari) — the rotate
+         hint overlay covers this case instead. */
+    });
+  }
+}
+
+// ---- Remember the player's name on this phone ----
+const NAME_KEY = 'partyGamesPlayerName';
+const savedName = localStorage.getItem(NAME_KEY);
+if (savedName) nameInput.value = savedName;
+
+// Tint the page background with the player's identity color, blended toward
+// the dark base so text stays readable regardless of which color they got.
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [parseInt(h.substring(0, 2), 16), parseInt(h.substring(2, 4), 16), parseInt(h.substring(4, 6), 16)];
+}
+function blendWithBase(hex, ratio) {
+  const BASE = [10, 12, 26]; // matches --bg #0a0c1a
+  const [r1, g1, b1] = hexToRgb(hex);
+  const r = Math.round(r1 * ratio + BASE[0] * (1 - ratio));
+  const g = Math.round(g1 * ratio + BASE[1] * (1 - ratio));
+  const b = Math.round(b1 * ratio + BASE[2] * (1 - ratio));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+function applyIdentityTheme(hex) {
+  document.body.style.background = blendWithBase(hex, 0.4);
 }
 
 // Pre-fill room code from ?room=XXXX in the QR link
 const params = new URLSearchParams(window.location.search);
 if (params.get('room')) roomInput.value = params.get('room').toUpperCase();
 
-let myColor = '#4cc9f0';
 let myId = null;
+let myGameType = 'arena';
 let eliminatedThisRound = false;
 
 joinBtn.addEventListener('click', doJoin);
@@ -45,14 +101,70 @@ function doJoin() {
       return;
     }
     joinError.textContent = '';
+    localStorage.setItem(NAME_KEY, name);
+    tryLockLandscape();
+
     myId = res.player.id;
-    myColor = res.player.color;
-    mySwatch.style.background = myColor;
-    mySwatch.style.color = myColor;
+    myGameType = res.gameType;
     eliminatedThisRound = false;
-    showScreen(waitingScreen);
+
+    const identityColor = res.player.identityColor || res.player.color;
+    mySwatch.style.background = identityColor;
+    mySwatch.style.color = identityColor;
+    applyIdentityTheme(identityColor);
+    waitingHint.textContent = res.player.team
+      ? `You're in! Team ${res.player.team.toUpperCase()} — waiting for host to start…`
+      : "You're in! Waiting for host to start…";
+
+    actionsArena.classList.toggle('hidden', myGameType !== 'arena');
+    actionsHockey.classList.toggle('hidden', myGameType !== 'hockey');
+    teamSelect.classList.toggle('hidden', myGameType !== 'hockey');
+
+    // Drop straight into a live game if we joined mid-round instead of
+    // making the player wait through a lobby screen that's already over.
+    if (res.phase === 'playing') {
+      showScreen(controllerScreen);
+    } else if (res.phase === 'countdown' && res.countdownStartsAt) {
+      showScreen(waitingScreen);
+      const delay = Math.max(0, res.countdownStartsAt - Date.now());
+      setTimeout(() => showScreen(controllerScreen), delay);
+    } else {
+      showScreen(waitingScreen);
+    }
   });
 }
+
+// ---- Team selection (Puck Rush only, lobby phase only) ----
+teamRedBtn.addEventListener('click', () => socket.emit('player:selectTeam', { team: 'red' }));
+teamBlueBtn.addEventListener('click', () => socket.emit('player:selectTeam', { team: 'blue' }));
+
+socket.on('lobby:update', ({ players }) => {
+  const me = players.find((p) => p.id === myId);
+  if (!me) return;
+  const identityColor = me.identityColor || me.color;
+  mySwatch.style.background = identityColor;
+  mySwatch.style.color = identityColor;
+  if (me.team) {
+    teamRedBtn.classList.toggle('active', me.team === 'red');
+    teamBlueBtn.classList.toggle('active', me.team === 'blue');
+  }
+});
+
+// Host switched games in-place — same room, new controls, no rejoin needed.
+socket.on('game:changed', ({ gameType }) => {
+  myGameType = gameType;
+  eliminatedThisRound = false;
+  actionsArena.classList.toggle('hidden', myGameType !== 'arena');
+  actionsHockey.classList.toggle('hidden', myGameType !== 'hockey');
+  teamSelect.classList.toggle('hidden', myGameType !== 'hockey');
+  showScreen(waitingScreen);
+});
+
+// Host restarted the same game — jump back to the waiting screen automatically.
+socket.on('game:reset', () => {
+  eliminatedThisRound = false;
+  showScreen(waitingScreen);
+});
 
 // The server flips state to 'playing' shortly after countdown starts.
 // We show controls as soon as countdown begins so players are ready to move at "GO".
@@ -67,6 +179,10 @@ socket.on('fx:hit', (hits) => {
   if (hits.some((h) => h.victimId === myId)) navigator.vibrate(60);
 });
 
+socket.on('fx:steal', ({ from }) => {
+  if (from === myId && navigator.vibrate) navigator.vibrate([40, 30, 40]);
+});
+
 socket.on('player:eliminated', ({ id, placement }) => {
   if (id !== myId) return;
   eliminatedThisRound = true;
@@ -75,9 +191,20 @@ socket.on('player:eliminated', ({ id, placement }) => {
   showScreen(statusScreen);
 });
 
-socket.on('game:ended', ({ winner }) => {
-  const iWon = winner && winner.id === myId;
-  statusText.textContent = iWon ? 'You WIN! 🏆' : winner ? `${winner.name} wins!` : 'Round over!';
+socket.on('goal:scored', ({ scorerId, ownGoal }) => {
+  if (!navigator.vibrate) return;
+  if (scorerId === myId) navigator.vibrate(ownGoal ? [30, 40, 30, 40, 30] : [50, 30, 90]);
+});
+
+socket.on('game:ended', (payload) => {
+  if (payload.mode === 'hockey') {
+    statusText.textContent = payload.winnerTeam
+      ? `${payload.winnerTeam.toUpperCase()} wins ${payload.score.red}–${payload.score.blue}!`
+      : `Draw ${payload.score.red}–${payload.score.blue}`;
+  } else {
+    const iWon = payload.winner && payload.winner.id === myId;
+    statusText.textContent = iWon ? 'You WIN! 🏆' : payload.winner ? `${payload.winner.name} wins!` : 'Round over!';
+  }
   showScreen(statusScreen);
 });
 
@@ -87,58 +214,7 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-// ---- Virtual joystick ----
-let joystickActive = false;
-let joystickPointerId = null;
-let currentDx = 0;
-let currentDy = 0;
-
-function getBaseGeometry() {
-  const rect = joystickBase.getBoundingClientRect();
-  return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2, r: rect.width / 2 };
-}
-
-function handleJoystickMove(clientX, clientY) {
-  const { cx, cy, r } = getBaseGeometry();
-  let dx = clientX - cx;
-  let dy = clientY - cy;
-  const dist = Math.hypot(dx, dy);
-  const maxDist = r * 0.9;
-  if (dist > maxDist) {
-    dx = (dx / dist) * maxDist;
-    dy = (dy / dist) * maxDist;
-  }
-  joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-  currentDx = dx / maxDist;
-  currentDy = dy / maxDist;
-}
-
-function resetJoystick() {
-  joystickKnob.style.transform = 'translate(-50%, -50%)';
-  currentDx = 0;
-  currentDy = 0;
-}
-
-joystickBase.addEventListener('pointerdown', (e) => {
-  joystickActive = true;
-  joystickPointerId = e.pointerId;
-  joystickBase.setPointerCapture(e.pointerId);
-  handleJoystickMove(e.clientX, e.clientY);
-});
-joystickBase.addEventListener('pointermove', (e) => {
-  if (!joystickActive || e.pointerId !== joystickPointerId) return;
-  handleJoystickMove(e.clientX, e.clientY);
-});
-function endJoystick(e) {
-  if (e.pointerId !== joystickPointerId) return;
-  joystickActive = false;
-  joystickPointerId = null;
-  resetJoystick();
-}
-joystickBase.addEventListener('pointerup', endJoystick);
-joystickBase.addEventListener('pointercancel', endJoystick);
-
-// ---- Dash button ----
+// ---- Arena Battle: Dash ----
 let dashCooldownUntil = 0;
 const DASH_COOLDOWN_MS = 1300; // mirrors server value, for UI feedback only
 
@@ -148,16 +224,50 @@ dashBtn.addEventListener('pointerdown', (e) => {
   const now = Date.now();
   if (now < dashCooldownUntil) return;
   dashCooldownUntil = now + DASH_COOLDOWN_MS;
-  socket.emit('player:input', { dx: currentDx, dy: currentDy, dash: true });
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, dash: true });
   if (navigator.vibrate) navigator.vibrate(40);
   dashBtn.classList.add('on-cooldown');
   setTimeout(() => dashBtn.classList.remove('on-cooldown'), DASH_COOLDOWN_MS);
 });
 
+// ---- Puck Rush: Shoot/Dash (server decides which, based on possession) ----
+actionBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, action: true });
+  if (navigator.vibrate) navigator.vibrate(35);
+});
+
+// ---- Puck Rush: Pass — a single tap, same pattern as Shoot/Dash. Only does
+// anything if you're currently holding the ball; the host briefly shows a
+// fading trail along the pass line for feedback. ----
+passBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy, pass: true });
+  if (navigator.vibrate) navigator.vibrate(30);
+});
+
 // ---- Send movement at a steady low-latency rate ----
-// Sending on every pointermove plus a steady interval keeps motion responsive
-// without flooding the network; last value wins each tick.
 setInterval(() => {
   if (controllerScreen.classList.contains('hidden') || eliminatedThisRound) return;
-  socket.emit('player:input', { dx: currentDx, dy: currentDy });
+  socket.emit('player:input', { dx: joystick.dx, dy: joystick.dy });
 }, 50); // 20 times/sec
+
+// ---- Latency badge (visible at all times, updates every 2s) ----
+function updatePingBadge(ms) {
+  pingBadge.textContent = `${ms}ms`;
+  pingBadge.classList.toggle('ping-good', ms < 100);
+  pingBadge.classList.toggle('ping-ok', ms >= 100 && ms < 250);
+  pingBadge.classList.toggle('ping-bad', ms >= 250);
+}
+function checkPing() {
+  const start = Date.now();
+  socket.emit('ping:check', null, () => {
+    const rtt = Date.now() - start;
+    updatePingBadge(rtt);
+    socket.emit('player:pingReport', rtt);
+  });
+}
+setInterval(checkPing, 2000);
+checkPing();
+
+updateRotateHint();
