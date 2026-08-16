@@ -110,15 +110,26 @@ function ordinal(n) {
 // The very first pick creates a fresh room (new code/QR). Every pick after
 // that reuses host:changeGame, which keeps the SAME room code so already-
 // connected players never have to rescan or rejoin.
-document.querySelectorAll('.game-card').forEach((btn) => {
+let selectedArenaSize = 'default';
+
+document.querySelectorAll('.size-chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    selectedArenaSize = chip.dataset.size;
+    document.querySelectorAll('.size-chip').forEach((c) => c.classList.toggle('active', c === chip));
+  });
+});
+
+document.querySelectorAll('.game-card-play').forEach((btn) => {
   btn.addEventListener('click', () => {
     unlockAudio(); // arm audio here too, in case Start is clicked quickly after
     const gameType = btn.dataset.game;
     applyGameTypeChrome(gameType);
+    const payload = { gameType };
+    if (gameType === 'arena') payload.arenaSize = selectedArenaSize;
     if (!hasCreatedRoom) {
-      socket.emit('host:create', { gameType });
+      socket.emit('host:create', payload);
     } else {
-      socket.emit('host:changeGame', { gameType });
+      socket.emit('host:changeGame', payload);
     }
   });
 });
@@ -301,10 +312,90 @@ function drawPingWarning(x, y, pingMs) {
   ctx.fillText(`⚠ ${pingMs}ms`, x, y + 34);
 }
 
+// ---- Decorative crowd (cheap: generated once per shape/size, then reused
+// every frame with just a subtle flicker so it doesn't look like noise) ----
+const CROWD_COLORS = ['#ffca3a', '#4cc9f0', '#ff595e', '#8ac926', '#f72585', '#ff924c', '#f4f4f8'];
+let crowdCache = { key: null, points: [] };
+
+function ringCrowd(radius, count) {
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.05;
+    const r = radius + 16 + Math.random() * 14;
+    pts.push({
+      x: Math.cos(angle) * r,
+      y: Math.sin(angle) * r,
+      r: 3 + Math.random() * 2.5,
+      color: CROWD_COLORS[Math.floor(Math.random() * CROWD_COLORS.length)],
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+  return pts;
+}
+
+function perimeterCrowd(halfW, halfH, count) {
+  const perim = 2 * (halfW * 2 + halfH * 2);
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    let d = (i / count) * perim;
+    let x, y, nx, ny;
+    if (d < halfW * 2) {
+      x = -halfW + d; y = -halfH; nx = 0; ny = -1;
+    } else if ((d -= halfW * 2) < halfH * 2) {
+      x = halfW; y = -halfH + d; nx = 1; ny = 0;
+    } else if ((d -= halfH * 2) < halfW * 2) {
+      x = halfW - d; y = halfH; nx = 0; ny = 1;
+    } else {
+      d -= halfW * 2;
+      x = -halfW; y = halfH - d; nx = -1; ny = 0;
+    }
+    const offset = 18 + Math.random() * 14;
+    pts.push({
+      x: x + nx * offset,
+      y: y + ny * offset,
+      r: 3 + Math.random() * 2.5,
+      color: CROWD_COLORS[Math.floor(Math.random() * CROWD_COLORS.length)],
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+  return pts;
+}
+
+function getCrowd(key, generator) {
+  if (crowdCache.key !== key) crowdCache = { key, points: generator() };
+  return crowdCache.points;
+}
+
+function drawCrowd(points, cx, cy, S) {
+  const t = Date.now() / 500;
+  ctx.save();
+  points.forEach((p) => {
+    const flicker = 0.5 + 0.5 * Math.sin(t + p.phase);
+    ctx.beginPath();
+    ctx.arc(cx + p.x * S, cy + p.y * S, p.r * S, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = 0.3 + flicker * 0.4;
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+// Arena Battle's render scale is computed fresh from the ACTUAL screen size
+// every frame, so "Large" always uses as much of the screen as safely
+// possible without ever overflowing it, regardless of monitor/TV size.
+function computeArenaScale(worldR0) {
+  const budget = Math.min(canvas.width, canvas.height) * 0.46; // on-screen radius budget
+  return budget / worldR0;
+}
+
 function renderArena(state) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
-  const S = RENDER_SCALE;
+  const worldR0 = state.arenaR0 || 380;
+  const S = computeArenaScale(worldR0);
+
+  const crowd = getCrowd(`arena-${worldR0}`, () => ringCrowd(worldR0, 90));
+  drawCrowd(crowd, cx, cy, S);
 
   ctx.beginPath();
   ctx.arc(cx, cy, state.arenaR * S, 0, Math.PI * 2);
@@ -354,13 +445,77 @@ function renderHpBars(players) {
     .join('');
 }
 
+// Draws a goal as a proper 3D-ish box (posts + back wall + net mesh) that
+// extends outward from the rink wall, rather than a flat line, so the puck
+// visibly enters "into" something when it scores.
+function drawGoalBox(cx, cy, side, S) {
+  const RINK_HALF_W = 350 * S;
+  const GOAL_HALF_H = 60 * S;
+  const DEPTH = 45 * S;
+  const wallX = cx + side * RINK_HALF_W;
+  const backX = wallX + side * DEPTH;
+  const top = cy - GOAL_HALF_H;
+  const bottom = cy + GOAL_HALF_H;
+  const color = side > 0 ? '#4cc9f0' : '#e63946';
+
+  // net mesh fill
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(Math.min(wallX, backX), top, Math.abs(backX - wallX), bottom - top);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.lineWidth = 1;
+  const meshStep = 9 * S;
+  for (let x = Math.min(wallX, backX); x <= Math.max(wallX, backX); x += meshStep) {
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+  }
+  for (let y = top; y <= bottom; y += meshStep) {
+    ctx.beginPath();
+    ctx.moveTo(Math.min(wallX, backX), y);
+    ctx.lineTo(Math.max(wallX, backX), y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // frame: back wall + top/bottom posts
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(backX, top);
+  ctx.lineTo(backX, bottom);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(wallX, top);
+  ctx.lineTo(backX, top);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(wallX, bottom);
+  ctx.lineTo(backX, bottom);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // goal-mouth posts (thicker, right at the wall)
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(wallX, top);
+  ctx.lineTo(wallX, bottom);
+  ctx.stroke();
+}
+
 function renderHockey(state) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
   const S = RENDER_SCALE;
   const RINK_HALF_W = 350 * S;
   const RINK_HALF_H = 190 * S;
-  const GOAL_HALF_H = 60 * S;
+
+  const crowd = getCrowd('hockey', () => perimeterCrowd(350, 190, 110));
+  drawCrowd(crowd, cx, cy, S);
 
   // rink
   ctx.strokeStyle = 'rgba(255,255,255,0.5)';
@@ -373,17 +528,8 @@ function renderHockey(state) {
   ctx.stroke();
 
   // goals (blue defends right, red defends left)
-  ctx.strokeStyle = '#4cc9f0';
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.moveTo(cx + RINK_HALF_W, cy - GOAL_HALF_H);
-  ctx.lineTo(cx + RINK_HALF_W, cy + GOAL_HALF_H);
-  ctx.stroke();
-  ctx.strokeStyle = '#e63946';
-  ctx.beginPath();
-  ctx.moveTo(cx - RINK_HALF_W, cy - GOAL_HALF_H);
-  ctx.lineTo(cx - RINK_HALF_W, cy + GOAL_HALF_H);
-  ctx.stroke();
+  drawGoalBox(cx, cy, 1, S);
+  drawGoalBox(cx, cy, -1, S);
 
   // players
   state.players.forEach((p) => {
@@ -405,7 +551,7 @@ function renderHockey(state) {
     drawPingWarning(x, y, p.pingMs);
   });
 
-  // pass preview (faint dashed aim line)
+  // pass trail (faint fading line showing where a pass just traveled)
   if (state.passPreview) {
     const from = { x: cx + state.passPreview.from.x * S, y: cy + state.passPreview.from.y * S };
     const to = { x: cx + state.passPreview.to.x * S, y: cy + state.passPreview.to.y * S };

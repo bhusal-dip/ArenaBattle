@@ -4,8 +4,16 @@ const COLORS = [
 ];
 
 const MAX_PLAYERS = 10;
-const ARENA_R0 = 380;
-const ARENA_MIN = 150;
+
+// Arena size profiles. "large" scales both the starting and minimum radius
+// by ~1.6x, giving noticeably more room to maneuver — especially useful
+// with more players. Actual on-screen size is scaled adaptively by the host
+// display to fit any screen, so a bigger world radius here always translates
+// to "more room to move" without ever risking overflowing the screen.
+const ARENA_PROFILES = {
+  default: { r0: 380, min: 150 },
+  large: { r0: 608, min: 240 },
+};
 const SHRINK_DURATION = 90000; // ms, time for arena to reach minimum size
 const TICK_MS = 1000 / 45; // server simulation tick rate
 const PLAYER_RADIUS = 18;
@@ -30,7 +38,7 @@ function clamp(v, min, max) {
 }
 
 class ArenaBattleRoom {
-  constructor(code, io) {
+  constructor(code, io, options = {}) {
     this.code = code;
     this.io = io;
     this.gameType = 'arena';
@@ -41,6 +49,11 @@ class ArenaBattleRoom {
     this.matchStart = 0;
     this.countdownStartsAt = null;
     this.remainingCount = 0; // used to compute elimination placements
+
+    const profile = ARENA_PROFILES[options.arenaSize] ? options.arenaSize : 'default';
+    this.arenaSize = profile;
+    this.arenaR0 = ARENA_PROFILES[profile].r0;
+    this.arenaMin = ARENA_PROFILES[profile].min;
   }
 
   addPlayer(socketId, name) {
@@ -164,7 +177,7 @@ class ArenaBattleRoom {
   currentArenaRadius() {
     const elapsed = Date.now() - this.matchStart;
     const t = clamp(elapsed / SHRINK_DURATION, 0, 1);
-    return ARENA_R0 - (ARENA_R0 - ARENA_MIN) * t;
+    return this.arenaR0 - (this.arenaR0 - this.arenaMin) * t;
   }
 
   tick() {
@@ -287,6 +300,7 @@ class ArenaBattleRoom {
 
     this.io.to(this.code).emit('state:update', {
       arenaR: R,
+      arenaR0: this.arenaR0,
       players: [...this.players.values()].map((p) => ({
         id: p.id,
         name: p.name,

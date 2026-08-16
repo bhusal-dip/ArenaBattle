@@ -103,13 +103,29 @@ html, body {
 .game-card {
   width: 24vw; min-width: 260px; padding: 32px 24px; border-radius: 20px;
   background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.12);
-  color: #fff; cursor: pointer; text-align: left;
+  color: #fff; text-align: left;
   display: flex; flex-direction: column; gap: 12px;
-  transition: transform 0.15s ease, border-color 0.15s ease;
+  transition: border-color 0.15s ease;
 }
-.game-card:hover { transform: translateY(-4px); border-color: #4cc9f0; }
+.game-card:hover { border-color: rgba(76,201,240,0.4); }
 .game-card-title { font-size: 1.6vw; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
 .game-card-desc { font-size: 1vw; color: #9aa0c3; line-height: 1.4; }
+
+.size-toggle { display: flex; gap: 8px; }
+.size-chip {
+  flex: 1; padding: 8px 10px; border-radius: 10px; border: 2px solid rgba(255,255,255,0.15);
+  background: transparent; color: #9aa0c3; font-size: 0.75vw; font-weight: 700;
+  cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.size-chip.active { border-color: #4cc9f0; color: #4cc9f0; background: rgba(76,201,240,0.1); }
+
+.game-card-play {
+  margin-top: 4px; padding: 12px; border-radius: 12px; border: none; cursor: pointer;
+  background: linear-gradient(135deg, #4cc9f0, #4361ee); color: #fff;
+  font-size: 1vw; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+  transition: transform 0.15s ease;
+}
+.game-card-play:hover { transform: translateY(-2px); }
 
 .score-hud {
   position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
@@ -154,7 +170,6 @@ html, body {
   0% { transform: translateY(0) rotate(0deg); opacity: 1; }
   100% { transform: translateY(110vh) rotate(720deg); opacity: 0.3; }
 }
-
 .announcements {
   position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 10px;

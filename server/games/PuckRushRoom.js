@@ -40,6 +40,8 @@ const REPICKUP_BLOCK_MS = 260; // brief grace period so a stolen/shot ball can't
 
 const WIN_SCORE = 5;
 const MATCH_DURATION = 150000; // 2.5 minutes
+const GOAL_DEPTH = 45; // world units the goal box extends outward from the wall
+const GOAL_FREEZE_MS = 700; // brief pause after a goal so it reads as a real moment, not an instant reset
 
 const TEAM_COLOR = { red: '#e63946', blue: '#4cc9f0' };
 
@@ -62,6 +64,7 @@ class PuckRushRoom {
     this.ball = { x: 0, y: 0, vx: 0, vy: 0, holderId: null, lastShooterId: null, lastShooterTeam: null };
     this.passFxLine = null;
     this.passFxUntil = 0;
+    this.goalFreezeUntil = 0;
   }
 
   addPlayer(socketId, name) {
@@ -209,6 +212,7 @@ class PuckRushRoom {
     this.ball.lastShooterTeam = null;
     this.passFxLine = null;
     this.passFxUntil = 0;
+    this.goalFreezeUntil = 0;
   }
 
   startGame() {
@@ -269,13 +273,60 @@ class PuckRushRoom {
       scorerColor: shooter ? shooter.identityColor : null,
       ownGoal,
     });
-    this.layoutKickoff();
+
+    // Nudge the ball visibly into the net box (rather than leaving it right
+    // on the goal line) and pause briefly so it reads as a real moment
+    // instead of an instant teleport back to center.
+    this.ball.x = scoringTeam === 'red' ? RINK_HALF_W + GOAL_DEPTH * 0.6 : -RINK_HALF_W - GOAL_DEPTH * 0.6;
+    this.ball.vx = 0;
+    this.ball.vy = 0;
+    this.ball.holderId = null;
+    this.goalFreezeUntil = Date.now() + GOAL_FREEZE_MS;
+
     // if (this.score[scoringTeam] >= WIN_SCORE) this.endGame();
+  }
+
+  serializePlayers(now) {
+    return [...this.players.values()].map((p) => ({
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      identityColor: p.identityColor,
+      team: p.team,
+      x: p.x,
+      y: p.y,
+      dashing: now < p.dashUntil,
+      connected: p.connected,
+      pingMs: p.pingMs,
+      goals: p.goals,
+      ownGoals: p.ownGoals,
+    }));
   }
 
   tick() {
     const dt = TICK_MS / 1000;
     const now = Date.now();
+
+    // Brief pause right after a goal: skip gameplay updates so the ball
+    // stays visible sitting in the net instead of a physics tick immediately
+    // dragging it back out or re-triggering the goal check.
+    if (this.goalFreezeUntil) {
+      if (now < this.goalFreezeUntil) {
+        const elapsed = now - this.matchStart;
+        this.io.to(this.code).emit('state:update', {
+          gameType: 'hockey',
+          score: { ...this.score },
+          timeRemaining: Math.max(0, MATCH_DURATION - elapsed),
+          ball: { x: this.ball.x, y: this.ball.y, holderId: null },
+          passPreview: null,
+          players: this.serializePlayers(now),
+        });
+        return;
+      }
+      this.goalFreezeUntil = 0;
+      this.layoutKickoff();
+    }
+
     const players = [...this.players.values()].filter((p) => p.connected);
 
     // --- player movement (same acceleration/friction/dash feel as Arena Battle) ---
@@ -438,20 +489,7 @@ class PuckRushRoom {
       timeRemaining,
       ball: { x: this.ball.x, y: this.ball.y, holderId: this.ball.holderId },
       passPreview: now < this.passFxUntil ? this.passFxLine : null,
-      players: [...this.players.values()].map((p) => ({
-        id: p.id,
-        name: p.name,
-        color: p.color,
-        identityColor: p.identityColor,
-        team: p.team,
-        x: p.x,
-        y: p.y,
-        dashing: now < p.dashUntil,
-        connected: p.connected,
-        pingMs: p.pingMs,
-        goals: p.goals,
-        ownGoals: p.ownGoals,
-      })),
+      players: this.serializePlayers(now),
     });
   }
 

@@ -22,14 +22,20 @@
   <section id="select-screen" class="screen">
     <h1 class="title">PARTY <span>GAMES</span></h1>
     <div class="game-select-grid">
-      <button class="game-card" data-game="arena">
+      <div class="game-card">
         <span class="game-card-title">Arena Battle</span>
         <span class="game-card-desc">Last blob standing in a shrinking arena. Joystick + Dash.</span>
-      </button>
-      <button class="game-card" data-game="hockey">
+        <div class="size-toggle">
+          <button class="size-chip active" data-size="default">Default size</button>
+          <button class="size-chip" data-size="large">Large arena</button>
+        </div>
+        <button class="game-card-play" data-game="arena">Play Arena Battle</button>
+      </div>
+      <div class="game-card">
         <span class="game-card-title">Puck Rush</span>
         <span class="game-card-desc">2 teams, one puck, two goals. Joystick + Shoot/Dash + Pass.</span>
-      </button>
+        <button class="game-card-play" data-game="hockey">Play Puck Rush</button>
+      </div>
     </div>
   </section>
 

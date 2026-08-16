@@ -104,6 +104,27 @@ because of latency and one infra difference.
 For a local party, keep running it locally — it's simpler and gives you the
 best latency. Deploy it only if you specifically want remote players.
 
+## Arena Battle size
+
+The host can pick **Default** or **Large** arena size on the game-select
+screen before starting. Large is roughly 1.6x the world space of Default —
+noticeably more room to maneuver, especially valuable with more players.
+The on-screen size is calculated adaptively from the actual screen/TV
+dimensions every frame, so Large always uses as much of the screen as it
+safely can without ever overflowing it, on any display.
+
+## Puck Rush rink visuals
+
+- **Goal boxes** are now drawn as a proper 3D-ish net (posts, back wall, and
+  a mesh fill) extending outward from the rink wall, instead of a flat line.
+- **Scoring pauses briefly** (~0.7s) with the ball visibly settled inside the
+  net before the kickoff reset, so a goal reads as a real moment rather than
+  an instant teleport.
+- **Crowd decoration** — a ring/perimeter of small flickering colored dots
+  around both Arena Battle's arena and Puck Rush's rink for atmosphere. Purely
+  visual, cached per arena size/rink so it doesn't regenerate (and jitter)
+  every frame.
+
 ## Puck Rush refinements
 
 - **Pass is now a single tap** (not hold-to-aim), same as Shoot/Dash — tap it

@@ -67,7 +67,7 @@ io.on('connection', (socket) => {
 
     const gameType = GAME_TYPES[payload.gameType] ? payload.gameType : 'arena';
     const code = generateRoomCode();
-    const room = createRoom(gameType, code, io);
+    const room = createRoom(gameType, code, io, { arenaSize: payload.arenaSize });
     room.hostSocketId = socket.id;
     rooms.set(code, room);
 
@@ -91,7 +91,7 @@ io.on('connection', (socket) => {
     const gameType = GAME_TYPES[payload.gameType] ? payload.gameType : 'arena';
     oldRoom.destroy();
 
-    const newRoom = createRoom(gameType, code, io);
+    const newRoom = createRoom(gameType, code, io, { arenaSize: payload.arenaSize });
     newRoom.hostSocketId = socket.id;
     for (const p of oldRoom.players.values()) {
       if (p.connected) newRoom.addPlayer(p.id, p.name);
