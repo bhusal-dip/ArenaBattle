@@ -71,6 +71,22 @@ html, body {
 
 .ping-tag { font-size: 0.7em; opacity: 0.55; margin-left: 6px; font-weight: 600; }
 
+.ping-badge {
+  position: fixed; bottom: 16px; right: 16px; z-index: 500;
+  background: rgba(0,0,0,0.5); color: #9aa0c3; padding: 6px 14px; border-radius: 10px;
+  font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px;
+  backdrop-filter: blur(4px);
+}
+.ping-badge.ping-good { color: #8ac926; }
+.ping-badge.ping-ok { color: #ffca3a; }
+.ping-badge.ping-bad { color: #ff595e; }
+
+.credit-badge {
+  position: fixed; bottom: 16px; left: 16px; z-index: 500;
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.3px;
+  color: rgba(244,244,248,0.35); pointer-events: none;
+}
+
 .countdown-number {
   font-size: 20vw; font-weight: 900; color: #ffca3a;
   text-shadow: 0 0 60px rgba(255,202,58,0.6);

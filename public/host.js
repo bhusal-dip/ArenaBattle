@@ -30,6 +30,7 @@ const codeBadgeQr = document.getElementById('code-badge-qr');
 const codeBadgeCode = document.getElementById('code-badge-code');
 const goalLogEl = document.getElementById('goal-log');
 const confettiLayer = document.getElementById('confetti-layer');
+const hostPingBadge = document.getElementById('host-ping-badge');
 
 const GAME_LABELS = { arena: 'Arena Battle', hockey: 'Puck Rush' };
 const RENDER_SCALE = 1.35; // zoom factor for the shared display, purely visual
@@ -105,6 +106,25 @@ function ordinal(n) {
   const v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
+
+// ---- Host's own connection latency to the server ----
+// The host display is just another Socket.io client — it can have its own
+// lag independent of any individual player's, especially now that this can
+// run over the internet rather than local WiFi.
+function updateHostPingBadge(ms) {
+  hostPingBadge.textContent = `${ms}ms`;
+  hostPingBadge.classList.toggle('ping-good', ms < 100);
+  hostPingBadge.classList.toggle('ping-ok', ms >= 100 && ms < 250);
+  hostPingBadge.classList.toggle('ping-bad', ms >= 250);
+}
+function checkHostPing() {
+  const start = Date.now();
+  socket.emit('ping:check', null, () => {
+    updateHostPingBadge(Date.now() - start);
+  });
+}
+setInterval(checkHostPing, 2000);
+checkHostPing();
 
 // ---- Game selection ----
 // The very first pick creates a fresh room (new code/QR). Every pick after

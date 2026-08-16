@@ -179,6 +179,10 @@ safely can without ever overflowing it, on any display.
   a "rotate your phone" prompt covers the screen until it's rotated. The
   join screen (typing name/room code) stays usable in portrait.
 
+## Credits
+
+Created by **Sudip Bhusal**.
+
 ## Deploying online (Fly.io, Render, Railway, etc.)
 
 This app needs a host that runs a **persistent Node process** — it keeps a

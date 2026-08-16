@@ -4,6 +4,7 @@
   "private": true,
   "description": "Local WiFi single-screen multiplayer party game. Phones are controllers via QR join.",
   "main": "server/index.js",
+  "author": "Sudip Bhusal",
   "scripts": {
     "start": "node server/index.js"
   },
